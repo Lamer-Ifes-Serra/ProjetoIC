@@ -5,6 +5,7 @@
 Sim, terminei o Passo 4. Nesse processo achei e corrigi um bug real no meu próprio script (não em dado externo), então vou registrar isso também, porque faz parte do diagnóstico.
 
 ---
+Nota histórica: este documento registra o estado, a nomenclatura e a organização do projeto no momento em que foi escrito. As referências a estudantes, frentes e “Passo N” foram preservadas como parte do histórico de desenvolvimento. Para o estado atual do sistema, consulte o README e a documentação técnica ativa
 
 ## Passo 2 — Mapeamento dos portais e fontes de dados (confirmado com dado real)
 

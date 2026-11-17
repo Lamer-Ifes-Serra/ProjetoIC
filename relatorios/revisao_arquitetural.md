@@ -5,6 +5,7 @@
 Esta não é mais uma sessão de "adicionar funcionalidade". É uma parada pra olhar pro que já existe, decidir o que fica, o que muda, e o que só será decidido quando tiver mais informação real. Segui a estrutura pedida (A a H).
 
 ---
+Nota histórica: este documento registra o estado, a nomenclatura e a organização do projeto no momento em que foi escrito. As referências a estudantes, frentes e “Passo N” foram preservadas como parte do histórico de desenvolvimento. Para o estado atual do sistema, consulte o README e a documentação técnica ativa
 
 ## A. Diagnóstico do estado atual (o que realmente está pronto)
 

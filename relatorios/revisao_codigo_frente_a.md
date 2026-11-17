@@ -2,6 +2,8 @@
 
 Revisei os scripts que eu fiz (`app/` e `pipeline/`), rodei tudo de novo do zero e comparei com o banco que eu já tinha. Os números continuam iguais (192 linhas de 15 min, PR de 22/09/2025 = 0,831; diferença máxima entre as duas execuções de 1e-14, que é arredondamento do computador). Não mexi nos scripts do Estudante 1.
 
+Nota histórica: este documento registra o estado, a nomenclatura e a organização do projeto no momento em que foi escrito. As referências a estudantes, frentes e “Passo N” foram preservadas como parte do histórico de desenvolvimento. Para o estado atual do sistema, consulte o README e a documentação técnica ativa
+
 ## O que eu achei e o que eu fiz
 
 | # | Achado | O que fiz |

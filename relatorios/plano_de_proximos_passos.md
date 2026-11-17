@@ -1,4 +1,5 @@
 # Plano de próximos passos — Projeto IC (atualizado em 24/10/2026)
+Documento histórico: este plano registra o estado e as prioridades do projeto em outubro de 2026. O documento foi substituído pelo Plano Mestre pós-carga. As referências a estudantes, frentes e “Passo N” foram preservadas como contexto histórico. Para o estado atual, consulte o README e a documentação técnica ativa.
 
 Lista que eu montei depois do plano de estudos, organizada em frentes. `[x]` = feito, `[ ]` = a fazer.
 
