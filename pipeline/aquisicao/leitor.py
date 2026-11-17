@@ -8,8 +8,8 @@ e ..._2330.txt): UMA linha por arquivo, separada por vírgula, SEM cabeçalho:
     local, freq, data, hora (UTC), 52 ou 56 valores
 
 Como não há cabeçalho, o significado de cada posição vem da ordem abaixo (a
-mesma dos nomes do arquivo bruto do Estudante 1). O horário do arquivo é UTC
-(conferido contra a coluna 'UTC' do arquivo tratado dele); o horário local
+mesma dos nomes do arquivo bruto de referência). O horário do arquivo é UTC
+(conferido contra a coluna 'UTC' do arquivo tratado de referência); o horário local
 ('UTC -3') é UTC menos 3 horas.
 
 DOIS LAYOUTS (pela quantidade de valores, nunca por suposição):

@@ -33,7 +33,7 @@ def salvar_dia(conn, data_iso, df_15min, df_resumo_pivot):
     daquela data em leitura_15min/resumo_diario e insere de novo.
 
     df_15min: já vem pronto (mesmas colunas da tabela leitura_15min).
-    df_resumo_pivot: 1 linha, colunas = indicadores do resumo do Passo 4.
+    df_resumo_pivot: 1 linha, colunas = indicadores do resumo diário do pipeline de integração.
 
     Devolve {"linhas_antes", "linhas_depois"} para quem chamou poder avisar
     quando um dia completo for trocado por um dia com menos linhas.

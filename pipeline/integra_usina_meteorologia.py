@@ -1,5 +1,5 @@
 """
-PASSO 4 - Pipeline de integração (usina + inversores + meteorologia) e histórico anual
+Pipeline de integração (usina + inversores + meteorologia) e histórico anual
 
 Este script tem duas partes:
 
@@ -17,7 +17,7 @@ Este script tem duas partes:
    é ponto). A regra usada: o ÚLTIMO ponto é sempre o decimal, os anteriores
    são separador de milhar.
 
-Achados confirmados com este script (ver relatório Passo 4 para o detalhe):
+Achados confirmados com este script (ver relatorios/relatorio_integracao_dados.md para o detalhe):
 - INV03 gerou 0.0 kWh entre 2020 e 2024 (5 anos) e só passou a gerar em 2025.
 - A meteorologia tratada cobre 15/07/2022 a 31/07/2026 -> não cobre 22/09/2026
   ainda, então a integração dessa data fica sem irradiância/temperatura.
@@ -42,7 +42,7 @@ PASTA_DADOS = os.path.join(PASTA_PROJETO, "dados")
 PASTA_RELATORIOS = os.path.join(PASTA_DADOS, "brutos", "usina_powerstation")
 PASTA_SAIDA = os.path.join(PASTA_DADOS, "processados")
 ARQUIVO_METEOROLOGIA = os.path.join(
-    PASTA_DADOS, "estudante1_meteorologia", "brutos", "dados_meteorologicos_tratados.xlsx"
+    PASTA_DADOS, "referencia_meteorologia", "brutos", "dados_meteorologicos_tratados.xlsx"
 )
 
 POTENCIA_NOMINAL = {"INV01": 35.0, "INV02": 35.0, "INV03": 35.0, "INV04": 14.0}
@@ -475,7 +475,7 @@ def cobertura_meteorologia():
 if __name__ == "__main__":
 
     print("=" * 70)
-    print("PASSO 4 - PIPELINE GENERALIZADA")
+    print("PIPELINE GENERALIZADA")
     print("=" * 70)
 
     datas = encontrar_datas_disponiveis()
@@ -522,5 +522,5 @@ if __name__ == "__main__":
     print(f"\nCobertura temporal da meteorologia tratada: {inicio_meteo} até {fim_meteo}")
 
     print("\n" + "=" * 70)
-    print("PASSO 4 CONCLUÍDO")
+    print("PIPELINE CONCLUÍDO")
     print("=" * 70)
