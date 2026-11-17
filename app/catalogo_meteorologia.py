@@ -12,8 +12,8 @@ test_catalogo_bate_com_schema avisa quando os dois divergem.
 
 Unidades: o sufixo no nome (_w_m2, _hpa, _c, _pct, _graus, _m_s) só aparece
 quando a unidade é certa pela própria grandeza. Todas as unidades abaixo são
-INFERIDAS pelo nome e pela faixa de valores; nenhuma foi confirmada ainda pelo
-Estudante 1 (campo UNIDADE_CONFIRMADA).
+INFERIDAS pelo nome e pela faixa de valores; nenhuma possui confirmação documental
+registrada ainda (campo UNIDADE_CONFIRMADA).
 """
 
 from collections import namedtuple
@@ -69,7 +69,7 @@ VARIAVEIS += [
              "Precipitação", "mm", "Precipitação no intervalo", True, TABELA_METEOROLOGIA),
 ]
 
-# ---- Já tratadas pelo Estudante 1 (têm _tratado e flag): 19 campos
+# ---- Já tratadas na referência (têm _tratado e flag): 19 campos
 VARIAVEIS += _quatro("umidade_relativa_{est}", "_pct", "Umidade Relativa {est}",
                      "flag_umidade_relativa_{est}", "Umidade relativa do ar", "%",
                      "Umidade relativa do ar", True)
@@ -156,7 +156,7 @@ def mapa_flags_arquivo():
 def gerar_dicionario_markdown():
     """Texto do dicionário das 56 variáveis, gerado do próprio catálogo."""
     linhas = [
-        "| Coluna no banco | Onde fica | Unidade (inferida) | Descrição | Tratada pelo Estudante 1 | Flag |",
+        "| Coluna no banco | Onde fica | Unidade (inferida) | Descrição | Tratada na referência | Flag |",
         "|---|---|---|---|---|---|",
     ]
     for v in VARIAVEIS:

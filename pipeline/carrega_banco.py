@@ -1,5 +1,5 @@
 """
-PASSO 5 - Persistencia em Banco de Dados Relacional (SQLite)
+Persistencia em Banco de Dados Relacional (SQLite)
 
 Este script agora e' so' um orquestrador fino: toda a logica de "como o
 banco e' estruturado e como gravar nele" mora em consultas.py (que tambem
@@ -7,7 +7,7 @@ e' usado pelo dashboard para ler). Antes esse conhecimento estava duplicado
 entre este arquivo e consultas.py -- e' a consolidacao de Repository que
 estava pendente na revisao arquitetural.
 
-Consome as saidas do Passo 4 (arquivos XLSX de integracao diaria e o
+Consome as saidas do pipeline de integracao (arquivos XLSX de integracao diaria e o
 historico anual) e grava tudo em dados/leituras.db. Idempotente: rodar
 varias vezes nao duplica nada.
 """
@@ -96,7 +96,7 @@ def validar(conn):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("PASSO 5 - POPULAR BANCO DE DADOS (SQLite)")
+    print("POPULAR BANCO DE DADOS (SQLite)")
     print("=" * 60)
 
     with banco.conectar_ou_criar() as conexao:
@@ -108,5 +108,5 @@ if __name__ == "__main__":
         validar(conexao)
 
     print("\n" + "=" * 60)
-    print(f"PASSO 5 CONCLUIDO! Banco criado em: {banco.DB_PATH}")
+    print(f"CARGA CONCLUIDA! Banco criado em: {banco.DB_PATH}")
     print("=" * 60)

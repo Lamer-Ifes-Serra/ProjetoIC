@@ -1,5 +1,5 @@
 """
-banco.py - Camada de conexão com o SQLite (Passo 6).
+banco.py - Camada de conexão com o SQLite.
 
 Toda a lógica de "onde está o banco" e "como abrir/fechar conexão" fica
 isolada aqui, pra não espalhar caminho de arquivo pelo resto do código.

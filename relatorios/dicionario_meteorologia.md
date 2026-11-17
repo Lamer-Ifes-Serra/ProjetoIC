@@ -1,21 +1,39 @@
-# Dicionário das variáveis meteorológicas (estação MAWS55)
+# Dicionário das variáveis meteorológicas — MAWS55
 
-Gerado do catálogo `app/catalogo_meteorologia.py` em 23/10/2026. Se a tabela e o catálogo divergirem, vale o catálogo e o banco (o teste `test_catalogo_bate_com_schema` avisa).
+Este documento descreve as variáveis meteorológicas armazenadas pelo ProjetoIC.
 
-## Como as variáveis estão no banco (estrutura versão 4)
+A tabela das 56 variáveis é gerada a partir de `app/catalogo_meteorologia.py`, que é a referência de nomenclatura, unidade, tratamento e flags.
 
-- Tabela **`meteorologia_15min`**: chave `timestamp_15min` (horário do arquivo em UTC-3, cortado para 15 min), `timestamp_original` (horário exato do arquivo), `lacuna_temporal`, **56 colunas de valor** e **24 colunas de flag** (83 colunas). É a **fonte de verdade da meteorologia**.
-- As **5 variáveis que já existiam** em `leitura_15min` (radiação global dos dois sensores, temperatura, vento médio e precipitação) agora também estão em `meteorologia_15min`. A cópia em `leitura_15min` é **legado**: o pipeline da usina ainda a preenche e a view prefere o valor de `meteorologia_15min`.
-- View **`vw_leitura_completa`**: junta `leitura_15min` + `meteorologia_15min` (toda linha da usina aparece; sem meteorologia no horário, as colunas vêm vazias). O cálculo do PR e o dashboard leem por ela, com as mesmas 14 colunas de sempre.
-- Tabela **`ingestao_arquivos`**: diário dos arquivos baixados do FTP ou de pasta (nome, hash, status, linhas, erro).
-- **Vazio é NULL**, nunca zero. **Flag 1** = valor invalidado pelo tratamento (o valor tratado fica vazio); flag 0 = valor mantido; flag vazia = não avaliado.
-- Variáveis **sem tratamento** (32) entram **como vieram** (dado bruto), sem flag.
-- Sufixo de unidade no nome (`_w_m2`, `_hpa`, `_c`, `_pct`, `_graus`, `_m_s`) só quando a grandeza deixa a unidade certa. **Todas as unidades são inferidas** e ainda não foram confirmadas.
-- Ao tratar uma variável bruta: criar migração nova (ex.: `005_flags_pressao.sql` com `ALTER TABLE ... ADD COLUMN flag_...`), atualizar o catálogo e as regras em `pipeline/aquisicao/tratamento.py` e rodar os testes.
+Se o catálogo, este documento e o banco divergirem, o catálogo e o schema versionado do banco devem ser verificados primeiro. A suíte de testes valida a consistência entre essas estruturas.
+
+## Estrutura meteorológica no banco
+
+- **`meteorologia_15min`**: armazena `timestamp_15min`, `timestamp_original`, `lacuna_temporal`, as 56 variáveis meteorológicas e suas flags de qualidade.
+- **`leitura_15min`**: mantém os dados elétricos e algumas colunas meteorológicas históricas por compatibilidade; a fonte principal da meteorologia é `meteorologia_15min`.
+- **`vw_leitura_completa`**: integra os dados elétricos e meteorológicos para consultas e análises.
+- **`ingestao_arquivos`**: registra os arquivos meteorológicos processados, seus hashes, status e mensagens de diagnóstico.
+- Valores ausentes são representados como **`NULL`**, e não como zero.
+- **Flag 1** indica que o valor foi invalidado pela respectiva regra de qualidade.
+- Flag vazia indica que a variável não foi avaliada por uma regra de qualidade.
+- Variáveis sem tratamento validado permanecem armazenadas como dados brutos.
+- Unidades marcadas como inferidas ainda dependem de confirmação documental.
+
+## Fonte dos dados
+
+O banco operacional recebe os dados diretamente dos arquivos da estação MAWS55.
+
+São suportados dois layouts reais:
+
+- **52 valores**: layout histórico, sem o grupo LPNET14 NTC;
+- **56 valores**: layout completo posterior.
+
+Os dois layouts foram validados com arquivos reais da estação.
+
+A aquisição contínua é realizada pelo pipeline `pipeline/aquisicao_maws55.py`. Para detalhes sobre formatos, tratamento, idempotência e automação, consulte `relatorios/aquisicao_maws55.md`.
 
 ## Tabela das 56 variáveis
 
-| Coluna no banco | Onde fica | Unidade (inferida) | Descrição | Tratada pelo Estudante 1 | Flag |
+| Coluna no banco | Onde fica | Unidade (inferida) | Descrição | Tratada na referência | Flag |
 |---|---|---|---|---|---|
 | `ghi_lppyra02_w_m2` | `meteorologia_15min` | W/m² | Radiação global, sensor LPPYRA02 (instantâneo) | sim | `flag_ghi_lppyra02_w_m2` |
 | `ghi_lpnet14_w_m2` | `meteorologia_15min` | W/m² | Radiação global, sensor LPNET14 (instantâneo) | sim | `flag_ghi_lpnet14_w_m2` |
@@ -74,20 +92,28 @@ Gerado do catálogo `app/catalogo_meteorologia.py` em 23/10/2026. Se a tabela e 
 | `temp_solo_max` | `meteorologia_15min` | a confirmar | Temperatura do solo (máximo) | não (dado bruto) | — |
 | `temp_solo_min` | `meteorologia_15min` | a confirmar | Temperatura do solo (mínimo) | não (dado bruto) | — |
 
-## Observações sobre os dados (a confirmar com quem tratou)
 
-Notadas ao conferir o arquivo `dados_meteorologicos_tratados.xlsx` (111.555 registros, 15/07/2022 16:00 a 31/07/2026 20:45):
+
+**
+
+## Observações da referência meteorológica histórica
+
+As observações abaixo foram levantadas durante a análise do arquivo meteorológico tratado de referência utilizado nas etapas iniciais do projeto.
+
+Esse arquivo possuía 111.555 registros e cobertura até 31/07/2026. Esses valores descrevem especificamente a referência histórica analisada e não representam a cobertura atual do banco operacional.
+
+Posteriormente, o histórico foi carregado diretamente a partir dos arquivos da estação e a aquisição da MAWS55 passou a ser executada automaticamente. Por isso, o banco operacional possui dados posteriores ao limite do arquivo tratado de referência.
 
 | Variável | O que aparece | Pergunta |
 |---|---|---|
-| `temperatura_med_c`, `_max_c`, `_min_c` | Mínimo de **-40,0 °C** (em `inst` o tratamento já invalidou 6 valores) | Valor travado do sensor? Vai ser tratado? |
-| `temp_ntc_lpnet14_*_c` | Máximo de **360** em `inst`, `med` e `max` | **Explicado (24/10/2026):** vem das 3.653 linhas de 15/07 a 22/08/2022, em que o xlsx tem nomes de colunas deslocados e esse campo traz a direção do vento. Não é erro do sensor. Ver `aquisicao_maws55.md`, seção 4.2 |
-| `umid_solo_*` | Valores de **-0,4 a 1,0** | Qual a unidade (fração? índice?) e o que significa negativo? |
+| `temperatura_med_c`, `_max_c`, `_min_c` | Mínimo de ****-40,0 °C**** (em `inst` o tratamento já invalidou 6 valores) | Valor travado do sensor? Vai ser tratado? |
+| `temp_ntc_lpnet14_*_c` | Máximo de ****360**** em `inst`, `med` e `max` | ****Explicado (24/10/2026):**** vem das 3.653 linhas de 15/07 a 22/08/2022, em que o xlsx tem nomes de colunas deslocados e esse campo traz a direção do vento. Não é erro do sensor. Ver `aquisicao_maws55.md`, seção 4.2 |
+| `umid_solo_*` | Valores de ****-0,4 a 1,0**** | Qual a unidade (fração? índice?) e o que significa negativo? |
 | `temp_solo_*` | Mínimo de 0,43 e máximo de 35 | Unidade e faixa válida? |
-| `rad_iv_*`, `rad_spf_*` | Valores **negativos** (IV até -145; SPF de -86 a 88) | Negativo é esperado nesses sensores? O que é "SPF"? |
+| `rad_iv_*`, `rad_spf_*` | Valores ****negativos**** (IV até -145; SPF de -86 a 88) | Negativo é esperado nesses sensores? O que é "SPF"? |
 | `vento_vel_max_m_s` | Máximo de 37,7 | Unidade é m/s mesmo? (a média geral é 3,6) |
 | `temp_int_c` | Entre 14,1 e 38,1 | É a temperatura interna de quê? |
-| `timestamp_original` | Segundos 07 ou 08 (ex.: 16:00:07) | O registro marca o **começo ou o fim** do intervalo de 15 min? |
-| `lacuna_temporal` | 51 lacunas no arquivo; ~30.257 registros ausentes estimados. Nos dados que chegam pela aquisição direta (FTP), esta coluna fica **vazia (desconhecida)** | Quais ficam vazios e quais são interpolados? |
-| Cobertura | Termina em 31/07/2026 | Quando o arquivo é estendido? |
-| `umid_solo_*` (regra de tratamento) | A regra do tratamento marca valor **igual a -400**, mas a coluna só tem valores de -0,4 a 1,0 (a regra nunca dispara) | O código de erro é -0,4 (valor já dividido por 1000)? |
+| `timestamp_original` | Segundos 07 ou 08 (ex.: 16:00:07) | O registro marca o ****começo ou o fim**** do intervalo de 15 min? |
+| `lacuna_temporal` | 51 lacunas no arquivo; ~30.257 registros ausentes estimados. Nos dados que chegam pela aquisição direta (FTP), esta coluna fica ****vazia (desconhecida)**** | Quais ficam vazios e quais são interpolados? |
+| Cobertura do arquivo de referência | Termina em 31/07/2026 | Limitação específica da referência histórica; o banco operacional recebe dados posteriores diretamente da estação |
+| `umid_solo_*` (regra de tratamento) | A regra do tratamento marca valor ****igual a -400****, mas a coluna só tem valores de -0,4 a 1,0 (a regra nunca dispara) | O código de erro é -0,4 (valor já dividido por 1000)? |

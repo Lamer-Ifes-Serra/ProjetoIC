@@ -17,6 +17,7 @@ projeto_ic_usina_fv/
 ```
 
 ---
+Nota histórica: este documento registra o estado, a nomenclatura e a organização do projeto no momento em que foi escrito. As referências a estudantes, frentes e “Passo N” foram preservadas como parte do histórico de desenvolvimento. Para o estado atual do sistema, consulte o README e a documentação técnica ativa
 
 ## Bloco 0 — Pré-requisitos de Python/Pandas (se algo aqui for novidade, comece por aqui)
 

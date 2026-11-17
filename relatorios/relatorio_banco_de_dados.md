@@ -4,6 +4,8 @@
 
 Rodei o `carrega_banco.py` que o ChatGPT desenhou. Antes de rodar de verdade contra os meus arquivos, achei mais um bug — dessa vez na minha própria pipeline do Passo 4, não no script do Passo 5.
 
+Nota histórica: este documento registra o estado, a nomenclatura e a organização do projeto no momento em que foi escrito. As referências a estudantes, frentes e “Passo N” foram preservadas como parte do histórico de desenvolvimento. Para o estado atual do sistema, consulte o README e a documentação técnica ativa.
+
 ## O bug que achei antes de conseguir rodar o Passo 5
 
 A aba `integracao_15min` que eu gerei no Passo 4 **não estava realmente agregada em 15 minutos** — continuava em 5 em 5 minutos (288 linhas por dia, quando o certo seria 96). Eu só tinha colado um rótulo `timestamp_15min` nas linhas de 5min e cruzado com a meteorologia, sem de fato agrupar/agregar. Isso não dava erro nenhum sozinho, mas quebrou na hora de inserir no banco: como o script do Passo 5 usa `timestamp_15min` como chave primária, ele tentou inserir 3 linhas com o mesmo timestamp (as três amostras de 5min que caem no mesmo bucket de 15min) e o SQLite recusou (`UNIQUE constraint failed`).

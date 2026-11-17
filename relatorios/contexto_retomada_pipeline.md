@@ -3,6 +3,7 @@
 Use este documento como "prompt de retomada": cole isso no início de uma nova conversa (com qualquer IA, ou pra você mesmo reler antes de continuar) pra recuperar o contexto completo sem precisar re-explicar tudo.
 
 ---
+Nota histórica: este documento registra o estado, a nomenclatura e a organização do projeto no momento em que foi escrito. As referências a estudantes, frentes e “Passo N” foram preservadas como parte do histórico de desenvolvimento. Para o estado atual do sistema, consulte o README e a documentação técnica ativa
 
 ## 1. Quem é quem
 

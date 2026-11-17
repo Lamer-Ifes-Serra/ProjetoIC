@@ -6,11 +6,14 @@ Rodar a partir da raiz do projeto:
 
 FORMATO: o .txt real (sem cabeçalho, vírgulas) foi confirmado com 2 arquivos do
 FTP, usados aqui como constantes (REAL_2330 e REAL_1900). Os demais arquivos dos
-testes são SINTÉTICOS, montados nesse mesmo formato. Só o layout de 52 valores
-(2022) foi visto em arquivo real; o de 56 valores segue a ordem do arquivo do
-Estudante 1 (conferida por teste, quando o xlsx dele está na máquina).
-O teste que compara com o arquivo tratado do Estudante 1 só roda se esse
-arquivo existir (variável METEO_TRATADO ou dados/estudante1_meteorologia/brutos/).
+testes são SINTÉTICOS, montados nesse mesmo formato.
+
+Os layouts de 52 valores (histórico de 2022) e 56 valores foram validados
+com arquivos reais da estação. A comparação com o arquivo tratado de referência
+só roda quando esse xlsx está disponível na máquina.
+
+O teste que compara com o arquivo tratado de referência só roda se esse
+arquivo existir (variável METEO_TRATADO ou dados/referencia_meteorologia/brutos/).
 """
 
 import os
@@ -36,7 +39,7 @@ from aquisicao.config import ConfigError, ConfigFTP, carregar_config_ftp, ler_ar
 from aquisicao.fontes import FonteFTP, FontePastaLocal, criar_fonte, filtrar_e_ordenar     # noqa: E402
 
 ARQUIVO_TRATADO = os.environ.get("METEO_TRATADO") or os.path.join(
-    PASTA_PROJETO, "dados", "estudante1_meteorologia", "brutos", "dados_meteorologicos_tratados.xlsx")
+    PASTA_PROJETO, "dados", "referencia_meteorologia", "brutos", "dados_meteorologicos_tratados.xlsx")
 
 
 def nomes_brutos():
@@ -82,8 +85,8 @@ class TestLeitor(unittest.TestCase):
         self.assertEqual(sorted(leitor.ORDEM_56), nomes_brutos(), "a ordem tem de cobrir exatamente as variáveis do catálogo")
         self.assertEqual(len(set(leitor.ORDEM_56)), 56)
 
-    @unittest.skipUnless(os.path.exists(ARQUIVO_TRATADO), "arquivo tratado do Estudante 1 não está nesta máquina")
-    def test_ordem_bate_com_a_ordem_do_arquivo_do_estudante1(self):
+    @unittest.skipUnless(os.path.exists(ARQUIVO_TRATADO), "arquivo tratado de referência não está nesta máquina")
+    def test_ordem_bate_com_a_ordem_do_arquivo_de_referencia(self):
         cabecalho = list(pd.read_excel(ARQUIVO_TRATADO, sheet_name="dados_tratados", nrows=1).columns)
         self.assertEqual(cabecalho[4:60], leitor.ORDEM_56)
 
@@ -211,23 +214,23 @@ class TestTratamento(unittest.TestCase):
         self.assertEqual((len(t), t["pressao_inst_hpa"].iloc[0], t.attrs["duplicados_descartados"]), (1, 2.0, 1))
 
 
-@unittest.skipUnless(os.path.exists(ARQUIVO_TRATADO), "arquivo tratado do Estudante 1 não está nesta máquina")
-class TestTratamentoContraOArquivoDoEstudante1(unittest.TestCase):
-    """Roda as regras sobre as colunas BRUTAS do arquivo tratado dele e exige o mesmo resultado."""
+@unittest.skipUnless(os.path.exists(ARQUIVO_TRATADO), "arquivo tratado de referência não está nesta máquina")
+class TestTratamentoContraOArquivoDeReferencia(unittest.TestCase):
+    """Roda as regras sobre as colunas BRUTAS do arquivo tratado de referência e exige o mesmo resultado."""
 
     _cache = None
 
     def referencia(self):
         """Lê o xlsx grande uma vez só para a classe (a leitura leva cerca de 1 minuto)."""
-        if TestTratamentoContraOArquivoDoEstudante1._cache is None:
+        if TestTratamentoContraOArquivoDeReferencia._cache is None:
             ref = pd.read_excel(ARQUIVO_TRATADO, sheet_name="dados_tratados")
             ref["UTC -3"] = pd.to_datetime(ref["UTC -3"])
-            TestTratamentoContraOArquivoDoEstudante1._cache = ref
-        return TestTratamentoContraOArquivoDoEstudante1._cache.copy()
+            TestTratamentoContraOArquivoDeReferencia._cache = ref
+        return TestTratamentoContraOArquivoDeReferencia._cache.copy()
 
     def test_valores_e_flags_identicos_no_layout_de_56(self):
-        """Layout de 56 valores (a partir de 22/08/2022): resultado idêntico ao dele.
-        As linhas do layout de 52 ficam de fora de propósito: nelas o arquivo dele tem os nomes
+        """Layout de 56 valores (a partir de 22/08/2022): resultado idêntico à referência.
+        As linhas do layout de 52 ficam de fora de propósito: nelas o arquivo de referência tem os nomes
         das colunas deslocados (ver o teste seguinte)."""
         ref = self.referencia()
         ref = ref.loc[ref["Precipitação"].notna() | ref["Umid solo med"].notna()]
@@ -245,10 +248,10 @@ class TestTratamentoContraOArquivoDoEstudante1(unittest.TestCase):
             if v.flag_arquivo:
                 if not (ref[v.flag_arquivo].astype(bool).values == t[catalogo.nome_flag(v)].astype(bool).values).all():
                     diferentes.append(catalogo.nome_flag(v))
-        self.assertEqual(diferentes, [], "colunas que divergem do tratamento do Estudante 1")
+        self.assertEqual(diferentes, [], "colunas que divergem do tratamento de referência")
 
-    def test_texto_de_56_valores_chega_igual_ao_arquivo_dele(self):
-        """Do .txt (sintético, feito dos valores brutos dele) até a tabela, sem perder nem trocar valor."""
+    def test_texto_de_56_valores_chega_igual_ao_arquivo_de_referencia(self):
+        """Do .txt (sintético, feito dos valores brutos de referência) até a tabela, sem perder nem trocar valor."""
         ref = self.referencia()
         ref = ref.loc[ref["Precipitação"].notna()].sample(300, random_state=1).sort_values("UTC -3")
         linhas = []
@@ -261,8 +264,8 @@ class TestTratamentoContraOArquivoDoEstudante1(unittest.TestCase):
                                       ref[leitor.ORDEM_56].astype("float64").reset_index(drop=True))
         self.assertTrue((df["UTC -3"].values == ref["UTC -3"].values).all())
 
-    def test_trecho_de_52_valores_esta_deslocado_no_arquivo_dele(self):
-        """No arquivo tratado do Estudante 1, as linhas de 15/07 a 22/08/2022 (52 valores) receberam
+    def test_trecho_de_52_valores_esta_deslocado_no_arquivo_de_referencia(self):
+        """No arquivo tratado de referência, as linhas de 15/07 a 22/08/2022 (52 valores) receberam
         nomes de 56 colunas na ordem; por isso 'Temperatura inst LPNET14 (NTC)' traz a direção do vento.
         O leitor usa o layout de 52 e coloca cada valor na variável certa."""
         ref = self.referencia()

@@ -1,5 +1,5 @@
 """
-dashboard.py - Passo 6: camada de apresentação sobre o leituras.db.
+dashboard.py - camada de apresentação sobre o leituras.db.
 
 Este arquivo só LÊ o banco (via consultas.py) e desenha a interface. Toda a
 lógica de query fica em consultas.py, e o cálculo de PR fica isolado em
@@ -115,7 +115,7 @@ if pagina == "Visão geral":
     st.dataframe(dados["resumo"], use_container_width=True)
 
     st.caption(
-        "Esta tabela vem direto da tabela `resumo_diario`, gerada pelo Passo 4 "
+        "Esta tabela vem direto da tabela `resumo_diario`, gerada pelo pipeline de integração "
         "(um registro por dia processado pelo pipeline)."
     )
 
@@ -179,7 +179,7 @@ elif pagina == "Geração da usina":
             )
         st.caption(
             "As duas curvas quase se sobrepõem quando os 4 inversores têm dado "
-            "no mesmo instante — é a validação cruzada feita no Passo 3/4."
+            "no mesmo instante — é a validação cruzada feita no pipeline de integração."
         )
 
 

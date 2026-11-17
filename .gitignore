@@ -8,13 +8,13 @@ venv/
 *.log
 .~lock.*#
 
-# Arquivos meteorológicos brutos/tratados do Estudante 1 -- grandes (26MB e
-# 44MB) e regeneráveis a partir do FTP da MAWS55 + do script dele. Não fazem
-# sentido versionados aqui; o pipeline lê o tratado, mas ninguém mais
-# depende de tê-lo no git (o leituras.db já carrega o que precisa dele).
-dados/estudante1_meteorologia/brutos/dados_meteorologicos.xlsx
-dados/estudante1_meteorologia/brutos/dados_meteorologicos_tratados.xlsx
-dados/estudante1_meteorologia/brutos/analise_meteorologicos.xlsx
+# Arquivos meteorológicos brutos/tratados de referência -- grandes (26MB e
+# 44MB) e regeneráveis a partir do FTP da MAWS55 + do script meteorológico
+# de referência. Não faz sentido versioná-los aqui; o pipeline lê o tratado,
+# mas ninguém mais depende de tê-lo no Git (o leituras.db já carrega o necessário).
+dados/referencia_meteorologia/brutos/dados_meteorologicos.xlsx
+dados/referencia_meteorologia/brutos/dados_meteorologicos_tratados.xlsx
+dados/referencia_meteorologia/brutos/analise_meteorologicos.xlsx
 
 # Cópias de segurança automáticas feitas antes de migrações do banco
 dados/backups/

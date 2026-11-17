@@ -1,13 +1,15 @@
-"""
-tratamento.py - Regras de qualidade do Estudante 1, aplicadas a dados novos.
 
-As regras são as do script dele (tratamento_de_dados_meteorologicos.py,
-criar_flags_fisicas), uma por grupo de variável. Valor que viola a regra vira
-vazio no valor tratado e a flag fica True; o valor bruto não é gravado no
-banco. Variáveis sem regra (as 32 brutas) seguem como vieram, sem flag.
-O teste test_tratamento valida estas regras contra o arquivo tratado dele.
 """
+tratamento.py - Regras de qualidade meteorológica de referência, aplicadas a dados novos.
 
+As regras são as do script meteorológico de referência
+(tratamento_de_dados_meteorologicos.py, criar_flags_fisicas), uma por grupo de variável.
+Valor que viola a regra vira vazio no valor tratado e a flag fica True; o valor
+bruto não é gravado no banco. Variáveis sem regra (as 32 brutas) seguem como
+vieram, sem flag.
+
+O teste test_tratamento valida estas regras contra o arquivo tratado de referência.
+"""
 import numpy as np
 import pandas as pd
 
