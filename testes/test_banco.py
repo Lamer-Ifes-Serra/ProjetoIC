@@ -285,6 +285,34 @@ class TestViewEJuncao(BancoTemporario):
         c = consultas.cobertura_geral(self.conn)
         self.assertEqual((c["total_registros_15min"], c["com_meteorologia"], c["com_ghi"]), (3, 1, 1))
 
+    def test_cobertura_geral_exige_os_quatro_inversores_preenchidos(self):
+        self.conn.execute(
+            """
+            UPDATE leitura_15min
+               SET potencia_inversores_soma_kw = 6.0,
+                   INV01 = 1.0,
+                   INV02 = 2.0,
+                   INV03 = 3.0,
+                   INV04 = NULL
+             WHERE timestamp_15min = '2025-09-22 00:00:00'
+            """
+        )
+        self.conn.execute(
+            """
+            UPDATE leitura_15min
+               SET potencia_inversores_soma_kw = 10.0,
+                   INV01 = 1.0,
+                   INV02 = 2.0,
+                   INV03 = 3.0,
+                   INV04 = 4.0
+             WHERE timestamp_15min = '2025-09-22 00:15:00'
+            """
+        )
+        self.conn.commit()
+        cobertura = consultas.cobertura_geral(self.conn)
+        self.assertEqual(cobertura["com_4_inversores"], 1)
+        self.assertEqual(cobertura["pct_4_inversores"], 33.3)
+
     def test_view_tem_uma_linha_por_timestamp(self):
         consultas.salvar_meteorologia(self.conn, dia_meteorologia(linhas=2))
         n = self.conn.execute("SELECT COUNT(*) FROM vw_leitura_completa").fetchone()[0]

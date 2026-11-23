@@ -303,7 +303,15 @@ def cobertura_geral(conn):
         "SELECT COUNT(*) AS n FROM vw_leitura_completa WHERE ghi_disponivel = 1", conn
     )["n"][0]
     com_4_inv = pd.read_sql(
-        "SELECT COUNT(*) AS n FROM leitura_15min WHERE potencia_inversores_soma_kw IS NOT NULL", conn
+        """
+        SELECT COUNT(*) AS n
+        FROM leitura_15min
+        WHERE INV01 IS NOT NULL
+          AND INV02 IS NOT NULL
+          AND INV03 IS NOT NULL
+          AND INV04 IS NOT NULL
+        """,
+        conn,
     )["n"][0]
     duplicados = pd.read_sql(
         """
