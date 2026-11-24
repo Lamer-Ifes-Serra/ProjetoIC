@@ -298,8 +298,9 @@ elif pagina == "Meteorologia × Geração":
 
     if df_dia.empty or not df_dia["meteorologia_disponivel"].any():
         st.warning(
-            f"Não há dados meteorológicos disponíveis para {data_escolhida} na base atual "
-            "(o arquivo tratado da MAWS55 cobre até 31/07/2026)."
+            f"Não há dados meteorológicos integrados disponíveis para {data_escolhida}. "
+            "O dashboard não calcula o Performance Ratio sem dados meteorológicos "
+            "correspondentes."
         )
     else:
         fig = go.Figure()
@@ -373,26 +374,27 @@ elif pagina == "Alertas e diagnóstico":
         "total da usina, mas isso não é uma prova definitiva."
     )
 
-    st.warning(
-        "**Cobertura meteorológica.** O arquivo tratado da MAWS55 cobre até "
-        "31/07/2026. Qualquer data posterior fica sem irradiância/temperatura "
-        "na base atual, e o dashboard não tenta preencher isso artificialmente."
+    st.info(
+        "**Cobertura meteorológica.** A base operacional da MAWS55 recebe dados "
+        "diretamente do FTP e é atualizada automaticamente. A disponibilidade "
+        "meteorológica nas análises integradas depende da correspondência temporal "
+        "com os dados elétricos; períodos ausentes não são preenchidos artificialmente."
     )
 
     st.info(
-        "**Strings desconectadas (INV01).** As entradas PV-2, PV-5, PV-8 e "
-        "PV-11 do INV01 aparecem com corrente 0,00 A de forma consistente — "
-        "interpretado como entrada sem string física conectada, não como falha."
+        "**Strings desconectadas (INV01).** As entradas PV-2, PV-5, PV-8 e PV-11 "
+        "do INV01 aparecem com corrente 0,00 A de forma consistente — interpretado "
+        "como entrada sem string física conectada, não como falha."
     )
 
     st.info(
-        "**Espaço Energia (KSTAR, 3 kWp).** Ainda não tem um histórico em "
-        "lote integrado ao banco como a usina principal — só telemetria "
-        "pontual foi inspecionada até agora."
+        "**Espaço Energia (KSTAR, 3 kWp).** O histórico de relatórios já foi "
+        "normalizado, mas ainda não foi carregado no banco central nem integrado "
+        "às páginas do dashboard."
     )
 
     st.caption(
-        "Esta página reúne, num só lugar, os achados de diagnóstico dos "
-        "Passos 2 a 5. Nenhum deles foi inventado ou assumido sem evidência "
-        "nos dados reais processados pelo pipeline."
+        "Esta página reúne achados derivados dos dados processados pelo pipeline. "
+        "Os diagnósticos devem ser interpretados no contexto da fonte e do período "
+        "analisado; causas operacionais exigem confirmação em campo."
     )
