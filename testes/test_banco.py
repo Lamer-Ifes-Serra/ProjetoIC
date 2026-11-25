@@ -99,11 +99,39 @@ class TestMigracoes(BancoTemporario):
                           "VALUES ('2025-09-22 12:00:00', 1010.0)")
         self.conn.commit()
         aplicadas = consultas.inicializar_schema(self.conn)
-        self.assertEqual(aplicadas, [3, 4])
+        self.assertEqual(aplicadas, [3, 4, 5])
         # 003 copia o valor legado de leitura_15min para a coluna nova
         self.assertEqual(self.conn.execute("SELECT temperatura_c FROM meteorologia_15min").fetchone()[0], 31.5)
         self.assertEqual(self.conn.execute("SELECT pressao_inst_hpa FROM meteorologia_15min").fetchone()[0], 1010.0)
         self.assertEqual(len(self.backups()), 1)
+
+    def test_migracao_005_cria_tabelas_relatorios(self):
+        consultas.inicializar_schema(self.conn)
+        tabelas = {r[0] for r in self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        )}
+        self.assertIn("phb_leitura", tabelas)
+        self.assertIn("kstar_leitura", tabelas)
+        self.assertEqual(migracoes.versao_atual(self.conn), 5)
+
+        indices_phb = {r[1] for r in self.conn.execute("PRAGMA index_list(phb_leitura)")}
+        indices_kstar = {r[1] for r in self.conn.execute("PRAGMA index_list(kstar_leitura)")}
+        self.assertIn("idx_phb_ts_local", indices_phb)
+        self.assertIn("idx_kstar_ts_local", indices_kstar)
+
+        colunas_phb = {r[1]: r[2] for r in self.conn.execute("PRAGMA table_info(phb_leitura)")}
+        colunas_kstar = {r[1]: r[2] for r in self.conn.execute("PRAGMA table_info(kstar_leitura)")}
+        self.assertEqual(colunas_phb["ts_utc"], "TEXT")
+        self.assertEqual(colunas_kstar["ts_utc"], "TEXT")
+        self.assertEqual(colunas_kstar["modo_inferido"], "INTEGER")
+        self.assertEqual(colunas_kstar["hora_corrigida"], "INTEGER")
+
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.conn.execute(
+                "INSERT INTO kstar_leitura (ts_utc, ts_local, modo_inferido) "
+                "VALUES ('2025-01-01T00:00:00Z', '2024-12-31 21:00:00', 2)"
+            )
+        self.assertEqual(consultas.inicializar_schema(self.conn), [])
 
     def test_numeracao_das_migracoes_e_continua(self):
         numeros = [n for n, _ in migracoes.listar_migracoes()]
