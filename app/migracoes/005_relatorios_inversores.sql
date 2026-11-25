@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS phb_leitura (
     i_ac_1_a REAL,
     i_ac_2_a REAL,
     i_ac_3_a REAL,
+    temperatura_c REAL,
     inversores_ativos INTEGER,
     inversores_total INTEGER,
     modo_texto TEXT,

@@ -122,6 +122,7 @@ class TestMigracoes(BancoTemporario):
         colunas_phb = {r[1]: r[2] for r in self.conn.execute("PRAGMA table_info(phb_leitura)")}
         colunas_kstar = {r[1]: r[2] for r in self.conn.execute("PRAGMA table_info(kstar_leitura)")}
         self.assertEqual(colunas_phb["ts_utc"], "TEXT")
+        self.assertEqual(colunas_phb["temperatura_c"], "REAL")
         self.assertEqual(colunas_kstar["ts_utc"], "TEXT")
         self.assertEqual(colunas_kstar["modo_inferido"], "INTEGER")
         self.assertEqual(colunas_kstar["hora_corrigida"], "INTEGER")
