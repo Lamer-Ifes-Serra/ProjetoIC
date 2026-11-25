@@ -42,7 +42,8 @@ class TestConsultasPHB(BancoRelatorios):
         self.assertEqual(
             consultas.resumo_phb(self.conn),
             {"primeira_data": None, "ultima_data": None, "total_registros": 0,
-             "dias_com_potencia": 0, "dias_com_energia": 0, "dias_com_temperatura": 0},
+             "registros_com_temperatura": 0, "dias_com_potencia": 0,
+             "dias_com_energia": 0, "dias_com_temperatura": 0},
         )
 
     def test_datas_phb_ordenadas(self):
@@ -55,6 +56,15 @@ class TestConsultasPHB(BancoRelatorios):
         self.assertEqual(len(df), 2)
         self.assertEqual(df["ts_local"].dt.strftime("%H:%M:%S").tolist(), ["00:00:00", "00:10:00"])
 
+    def test_resumo_phb_conta_registros_com_temperatura(self):
+        self.inserir_dados()
+        self.conn.execute(
+            "UPDATE phb_leitura SET temperatura_c = NULL WHERE ts_utc = ?",
+            ("2025-09-01 03:00:00",),
+        )
+        self.conn.commit()
+        self.assertEqual(consultas.resumo_phb(self.conn)["registros_com_temperatura"], 2)
+
     def test_view_e_resumo_phb_agregam_por_data_local(self):
         self.inserir_dados()
         dia = self.conn.execute(
@@ -66,7 +76,8 @@ class TestConsultasPHB(BancoRelatorios):
         self.assertEqual(
             consultas.resumo_phb(self.conn),
             {"primeira_data": "2025-09-01", "ultima_data": "2025-09-02", "total_registros": 3,
-             "dias_com_potencia": 2, "dias_com_energia": 2, "dias_com_temperatura": 2},
+             "registros_com_temperatura": 3, "dias_com_potencia": 2,
+             "dias_com_energia": 2, "dias_com_temperatura": 2},
         )
 
 

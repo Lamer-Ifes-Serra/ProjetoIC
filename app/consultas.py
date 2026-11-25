@@ -373,10 +373,14 @@ def resumo_phb(conn):
                   COALESCE(SUM(temperatura_media_c IS NOT NULL), 0)
            FROM vw_phb_resumo_diario"""
     ).fetchone()
+    registros_temperatura = conn.execute(
+        "SELECT COUNT(*) FROM phb_leitura WHERE temperatura_c IS NOT NULL"
+    ).fetchone()[0]
     return {
         "primeira_data": inicio,
         "ultima_data": fim,
         "total_registros": int(total),
+        "registros_com_temperatura": int(registros_temperatura),
         "dias_com_potencia": int(dias_potencia),
         "dias_com_energia": int(dias_energia),
         "dias_com_temperatura": int(dias_temperatura),

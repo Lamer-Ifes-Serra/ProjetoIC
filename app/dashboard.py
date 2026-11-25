@@ -77,6 +77,15 @@ def carregar_resumo_phb_pagina(caminho):
 
 
 @st.cache_data(ttl=300)
+def carregar_resumo_historicos(caminho):
+    conn = _conectar_banco_relatorios(caminho)
+    try:
+        return consultas.resumo_phb(conn), consultas.resumo_kstar(conn)
+    finally:
+        conn.close()
+
+
+@st.cache_data(ttl=300)
 def carregar_phb_pagina(caminho, inicio, fim):
     conn = _conectar_banco_relatorios(caminho)
     try:
@@ -174,6 +183,30 @@ if pagina == "Visão geral":
 
 
 # ------------------------------------------------------------------
+    st.divider()
+    st.subheader("Históricos carregados")
+    caminho_relatorios = os.environ.get(RELATORIOS_DB_ENV, banco.DB_PATH)
+    try:
+        resumo_phb_hist, resumo_kstar_hist = carregar_resumo_historicos(caminho_relatorios)
+    except (FileNotFoundError, sqlite3.Error) as erro:
+        st.info(f"Não foi possível consultar os históricos PHB/KSTAR: {erro}")
+    else:
+        st.markdown("**PHB**")
+        phb_cols = st.columns(3)
+        phb_cols[0].metric("Primeira data", resumo_phb_hist["primeira_data"] or "—")
+        phb_cols[1].metric("Última data", resumo_phb_hist["ultima_data"] or "—")
+        phb_cols[2].metric("Registros", f'{resumo_phb_hist["total_registros"]:,}'.replace(",", "."))
+
+        st.markdown("**KSTAR**")
+        kstar_cols = st.columns(3)
+        kstar_cols[0].metric("Primeira data", resumo_kstar_hist["primeira_data"] or "—")
+        kstar_cols[1].metric("Última data", resumo_kstar_hist["ultima_data"] or "—")
+        kstar_cols[2].metric("Registros", f'{resumo_kstar_hist["total_registros"]:,}'.replace(",", "."))
+
+        total_relatorios = resumo_phb_hist["total_registros"] + resumo_kstar_hist["total_registros"]
+        st.metric("Total de registros dos relatórios", f"{total_relatorios:,}".replace(",", "."))
+
+
 # 2. Geração da usina
 # ------------------------------------------------------------------
 
@@ -340,6 +373,38 @@ elif pagina == "Qualidade dos dados":
 
 
 # ------------------------------------------------------------------
+    st.divider()
+    st.subheader("Cobertura dos históricos carregados")
+    caminho_relatorios = os.environ.get(RELATORIOS_DB_ENV, banco.DB_PATH)
+    try:
+        resumo_phb_hist, resumo_kstar_hist = carregar_resumo_historicos(caminho_relatorios)
+    except (FileNotFoundError, sqlite3.Error) as erro:
+        st.info(f"Não foi possível consultar a cobertura PHB/KSTAR: {erro}")
+    else:
+        cobertura_hist = pd.DataFrame([
+            {
+                "Fonte": "PHB",
+                "Início": resumo_phb_hist["primeira_data"] or "—",
+                "Fim": resumo_phb_hist["ultima_data"] or "—",
+                "Registros": resumo_phb_hist["total_registros"],
+            },
+            {
+                "Fonte": "KSTAR",
+                "Início": resumo_kstar_hist["primeira_data"] or "—",
+                "Fim": resumo_kstar_hist["ultima_data"] or "—",
+                "Registros": resumo_kstar_hist["total_registros"],
+            },
+        ])
+        st.dataframe(cobertura_hist, use_container_width=True, hide_index=True)
+        qualidade_cols = st.columns(3)
+        qualidade_cols[0].metric(
+            "PHB com temperatura",
+            f'{resumo_phb_hist["registros_com_temperatura"]:,}'.replace(",", "."),
+        )
+        qualidade_cols[1].metric("KSTAR hora corrigida", f'{resumo_kstar_hist["pct_hora_corrigida"]}%')
+        qualidade_cols[2].metric("KSTAR modo inferido", f'{resumo_kstar_hist["pct_modo_inferido"]}%')
+
+
 # 6. Meteorologia × Geração
 # ------------------------------------------------------------------
 
@@ -441,9 +506,8 @@ elif pagina == "Alertas e diagnóstico":
     )
 
     st.info(
-        "**Espaço Energia (KSTAR, 3 kWp).** O histórico de relatórios já foi "
-        "normalizado, mas ainda não foi carregado no banco central nem integrado "
-        "às páginas do dashboard."
+        "**Espaço Energia (KSTAR, 3 kWp).** O histórico de relatórios está "
+        "carregado e disponível nas páginas Histórico PHB e Histórico KSTAR."
     )
 
     st.caption(
