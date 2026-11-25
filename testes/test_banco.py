@@ -99,7 +99,7 @@ class TestMigracoes(BancoTemporario):
                           "VALUES ('2025-09-22 12:00:00', 1010.0)")
         self.conn.commit()
         aplicadas = consultas.inicializar_schema(self.conn)
-        self.assertEqual(aplicadas, [3, 4, 5])
+        self.assertEqual(aplicadas, [n for n, _ in migracoes.listar_migracoes() if n > 2])
         # 003 copia o valor legado de leitura_15min para a coluna nova
         self.assertEqual(self.conn.execute("SELECT temperatura_c FROM meteorologia_15min").fetchone()[0], 31.5)
         self.assertEqual(self.conn.execute("SELECT pressao_inst_hpa FROM meteorologia_15min").fetchone()[0], 1010.0)
@@ -112,7 +112,7 @@ class TestMigracoes(BancoTemporario):
         )}
         self.assertIn("phb_leitura", tabelas)
         self.assertIn("kstar_leitura", tabelas)
-        self.assertEqual(migracoes.versao_atual(self.conn), 5)
+        self.assertEqual(migracoes.versao_atual(self.conn), len(migracoes.listar_migracoes()))
 
         indices_phb = {r[1] for r in self.conn.execute("PRAGMA index_list(phb_leitura)")}
         indices_kstar = {r[1] for r in self.conn.execute("PRAGMA index_list(kstar_leitura)")}

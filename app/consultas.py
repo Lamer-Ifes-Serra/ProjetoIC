@@ -333,3 +333,91 @@ def cobertura_geral(conn):
         "pct_4_inversores": round(100 * com_4_inv / total_15min, 1) if total_15min else 0.0,
         "timestamps_duplicados": int(duplicados),
     }
+# ============================================================
+# REPORT QUERIES (PHB and KSTAR)
+# ============================================================
+
+
+def datas_phb(conn):
+    """Return local dates with PHB readings, sorted ascending (YYYY-MM-DD)."""
+    return [
+        row[0] for row in conn.execute(
+            "SELECT data FROM vw_phb_resumo_diario ORDER BY data"
+        ).fetchall()
+    ]
+
+
+def phb_periodo(conn, inicio, fim):
+    """Return PHB readings whose local date is between inicio and fim, inclusive."""
+    return pd.read_sql(
+        """
+        SELECT ts_utc, ts_local, potencia_w, energia_intervalo_kwh,
+               i_ac_1_a, i_ac_2_a, i_ac_3_a, temperatura_c,
+               inversores_ativos, inversores_total, modo_texto, qualidade, arquivo
+        FROM phb_leitura
+        WHERE DATE(ts_local) BETWEEN ? AND ?
+        ORDER BY ts_utc
+        """,
+        conn,
+        params=[inicio, fim],
+        parse_dates=["ts_utc", "ts_local"],
+    )
+
+
+def resumo_phb(conn):
+    """Return first/last local dates and total row count for PHB."""
+    inicio, fim, total = conn.execute(
+        """SELECT MIN(data), MAX(data), COALESCE(SUM(registros), 0)
+           FROM vw_phb_resumo_diario"""
+    ).fetchone()
+    return {
+        "primeira_data": inicio,
+        "ultima_data": fim,
+        "total_registros": int(total),
+    }
+
+
+def datas_kstar(conn):
+    """Return local dates with KSTAR readings, sorted ascending (YYYY-MM-DD)."""
+    return [
+        row[0] for row in conn.execute(
+            "SELECT data FROM vw_kstar_resumo_diario ORDER BY data"
+        ).fetchall()
+    ]
+
+
+def kstar_periodo(conn, inicio, fim):
+    """Return original-cadence KSTAR readings in the inclusive local-date range."""
+    return pd.read_sql(
+        """
+        SELECT ts_utc, ts_local, potencia_w, energia_total_kwh, energia_intervalo_kwh,
+               pv1_w, pv2_w, pv3_w, pv1_v, pv2_v, pv3_v,
+               pv1_a, pv2_a, pv3_a, temp_radiador_c,
+               modo, modo_original, modo_inferido, hora_corrigida, qualidade, arquivo
+        FROM kstar_leitura
+        WHERE DATE(ts_local) BETWEEN ? AND ?
+        ORDER BY ts_utc
+        """,
+        conn,
+        params=[inicio, fim],
+        parse_dates=["ts_utc", "ts_local"],
+    )
+
+
+def resumo_kstar(conn):
+    """Return local date range, row count, interval energy and corrected-time percentage."""
+    inicio, fim, total, energia, corrigidas = conn.execute(
+        """SELECT MIN(data), MAX(data),
+                  COALESCE(SUM(registros), 0),
+                  COALESCE(SUM(energia_intervalo_kwh), 0.0),
+                  COALESCE(SUM(hora_corrigida), 0)
+           FROM vw_kstar_resumo_diario"""
+    ).fetchone()
+    total = int(total)
+    return {
+        "primeira_data": inicio,
+        "ultima_data": fim,
+        "total_registros": total,
+        "energia_intervalo_kwh": float(energia),
+        "pct_hora_corrigida": round(100 * corrigidas / total, 1) if total else 0.0,
+    }
