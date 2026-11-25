@@ -41,7 +41,8 @@ class TestConsultasPHB(BancoRelatorios):
         self.assertTrue(periodo.empty)
         self.assertEqual(
             consultas.resumo_phb(self.conn),
-            {"primeira_data": None, "ultima_data": None, "total_registros": 0},
+            {"primeira_data": None, "ultima_data": None, "total_registros": 0,
+             "dias_com_potencia": 0, "dias_com_energia": 0, "dias_com_temperatura": 0},
         )
 
     def test_datas_phb_ordenadas(self):
@@ -64,7 +65,8 @@ class TestConsultasPHB(BancoRelatorios):
             self.assertAlmostEqual(atual, esperado)
         self.assertEqual(
             consultas.resumo_phb(self.conn),
-            {"primeira_data": "2025-09-01", "ultima_data": "2025-09-02", "total_registros": 3},
+            {"primeira_data": "2025-09-01", "ultima_data": "2025-09-02", "total_registros": 3,
+             "dias_com_potencia": 2, "dias_com_energia": 2, "dias_com_temperatura": 2},
         )
 
 
@@ -91,7 +93,8 @@ class TestConsultasKSTAR(BancoRelatorios):
         self.assertEqual(
             consultas.resumo_kstar(self.conn),
             {"primeira_data": None, "ultima_data": None, "total_registros": 0,
-             "energia_intervalo_kwh": 0.0, "pct_hora_corrigida": 0.0},
+             "energia_intervalo_kwh": 0.0, "pct_hora_corrigida": 0.0,
+             "pct_modo_inferido": 0.0},
         )
 
     def test_datas_kstar_ordenadas_e_periodo_inclusivo(self):
@@ -107,23 +110,24 @@ class TestConsultasKSTAR(BancoRelatorios):
         dia = self.conn.execute(
             "SELECT * FROM vw_kstar_resumo_diario WHERE data = '2025-09-01'"
         ).fetchone()
-        self.assertEqual(dia, ("2025-09-01", 4, 0.1, 400.0, 13.0, 23.0, 33.0, 2))
+        self.assertEqual(dia, ("2025-09-01", 4, 0.1, 400.0, 13.0, 23.0, 33.0, 2, 1))
         resumo = consultas.resumo_kstar(self.conn)
         self.assertEqual((resumo["primeira_data"], resumo["ultima_data"], resumo["total_registros"]),
                          ("2025-09-01", "2025-09-02", 5))
         self.assertAlmostEqual(resumo["energia_intervalo_kwh"], 0.15)
         self.assertAlmostEqual(resumo["pct_hora_corrigida"], 60.0)
+        self.assertAlmostEqual(resumo["pct_modo_inferido"], 20.0)
 
     def test_view_kstar_15min_agrega_no_balde_local_correto(self):
         self.inserir_dados()
         linhas = self.conn.execute(
             "SELECT timestamp_15min, registros, energia_intervalo_kwh, potencia_media_w, "
-            "potencia_max_w, pv1_max_w, hora_corrigida "
+            "potencia_max_w, pv1_max_w, hora_corrigida, modo_inferido "
             "FROM vw_kstar_15min ORDER BY timestamp_15min"
         ).fetchall()
         self.assertEqual(len(linhas), 3)
         self.assertEqual(linhas[0][0:2], ("2025-09-01 00:00:00", 3))
-        for atual, esperado in zip(linhas[0][2:], (0.06, 200.0, 300.0, 12.0, 2)):
+        for atual, esperado in zip(linhas[0][2:], (0.06, 200.0, 300.0, 12.0, 2, 1)):
             self.assertAlmostEqual(atual, esperado)
         self.assertEqual(linhas[1][0:2], ("2025-09-01 00:15:00", 1))
         self.assertEqual(linhas[2][0:2], ("2025-09-02 01:00:00", 1))

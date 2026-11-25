@@ -366,14 +366,20 @@ def phb_periodo(conn, inicio, fim):
 
 def resumo_phb(conn):
     """Return first/last local dates and total row count for PHB."""
-    inicio, fim, total = conn.execute(
-        """SELECT MIN(data), MAX(data), COALESCE(SUM(registros), 0)
+    inicio, fim, total, dias_potencia, dias_energia, dias_temperatura = conn.execute(
+        """SELECT MIN(data), MAX(data), COALESCE(SUM(registros), 0),
+                  COALESCE(SUM(potencia_max_w IS NOT NULL), 0),
+                  COALESCE(SUM(energia_kwh IS NOT NULL), 0),
+                  COALESCE(SUM(temperatura_media_c IS NOT NULL), 0)
            FROM vw_phb_resumo_diario"""
     ).fetchone()
     return {
         "primeira_data": inicio,
         "ultima_data": fim,
         "total_registros": int(total),
+        "dias_com_potencia": int(dias_potencia),
+        "dias_com_energia": int(dias_energia),
+        "dias_com_temperatura": int(dias_temperatura),
     }
 
 
@@ -406,11 +412,12 @@ def kstar_periodo(conn, inicio, fim):
 
 def resumo_kstar(conn):
     """Return local date range, row count, interval energy and corrected-time percentage."""
-    inicio, fim, total, energia, corrigidas = conn.execute(
+    inicio, fim, total, energia, corrigidas, inferidas = conn.execute(
         """SELECT MIN(data), MAX(data),
                   COALESCE(SUM(registros), 0),
                   COALESCE(SUM(energia_intervalo_kwh), 0.0),
-                  COALESCE(SUM(hora_corrigida), 0)
+                  COALESCE(SUM(hora_corrigida), 0),
+                  COALESCE(SUM(modo_inferido), 0)
            FROM vw_kstar_resumo_diario"""
     ).fetchone()
     total = int(total)
@@ -420,4 +427,5 @@ def resumo_kstar(conn):
         "total_registros": total,
         "energia_intervalo_kwh": float(energia),
         "pct_hora_corrigida": round(100 * corrigidas / total, 1) if total else 0.0,
+        "pct_modo_inferido": round(100 * inferidas / total, 1) if total else 0.0,
     }

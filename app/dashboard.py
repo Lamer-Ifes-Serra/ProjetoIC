@@ -9,6 +9,11 @@ tudo misturado.
 Rodar com:  streamlit run dashboard.py
 """
 
+import os
+import sqlite3
+from datetime import date
+from pathlib import Path
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -52,6 +57,52 @@ def carregar_dia(data_iso):
         return consultas.leitura_15min_do_dia(conn, data_iso)
 
 
+RELATORIOS_DB_ENV = "PROJETOIC_RELATORIOS_DB_PATH"
+
+
+def _conectar_banco_relatorios(caminho):
+    if not os.path.isfile(caminho):
+        raise FileNotFoundError(f"Banco de historicos nao encontrado: {caminho}")
+    uri = Path(caminho).resolve().as_uri() + "?mode=ro"
+    return sqlite3.connect(uri, uri=True)
+
+
+@st.cache_data(ttl=300)
+def carregar_resumo_phb_pagina(caminho):
+    conn = _conectar_banco_relatorios(caminho)
+    try:
+        return consultas.datas_phb(conn), consultas.resumo_phb(conn)
+    finally:
+        conn.close()
+
+
+@st.cache_data(ttl=300)
+def carregar_phb_pagina(caminho, inicio, fim):
+    conn = _conectar_banco_relatorios(caminho)
+    try:
+        return consultas.phb_periodo(conn, inicio, fim)
+    finally:
+        conn.close()
+
+
+@st.cache_data(ttl=300)
+def carregar_resumo_kstar_pagina(caminho):
+    conn = _conectar_banco_relatorios(caminho)
+    try:
+        return consultas.datas_kstar(conn), consultas.resumo_kstar(conn)
+    finally:
+        conn.close()
+
+
+@st.cache_data(ttl=300)
+def carregar_kstar_pagina(caminho, inicio, fim):
+    conn = _conectar_banco_relatorios(caminho)
+    try:
+        return consultas.kstar_periodo(conn, inicio, fim)
+    finally:
+        conn.close()
+
+
 try:
     dados = carregar_dados()
 except banco.BancoNaoEncontrado as erro:
@@ -79,6 +130,8 @@ pagina = st.sidebar.radio(
         "Qualidade dos dados",
         "Meteorologia × Geração",
         "Alertas e diagnóstico",
+        "Histórico PHB",
+        "Histórico KSTAR",
     ],
 )
 
@@ -398,3 +451,144 @@ elif pagina == "Alertas e diagnóstico":
         "Os diagnósticos devem ser interpretados no contexto da fonte e do período "
         "analisado; causas operacionais exigem confirmação em campo."
     )
+
+# ------------------------------------------------------------------
+# 8. Historico PHB
+# ------------------------------------------------------------------
+
+elif pagina == "Histórico PHB":
+    st.title("Histórico PHB")
+    caminho_relatorios = os.environ.get(RELATORIOS_DB_ENV, banco.DB_PATH)
+
+    try:
+        datas_hist, resumo_hist = carregar_resumo_phb_pagina(caminho_relatorios)
+    except (FileNotFoundError, sqlite3.Error) as erro:
+        st.error(f"Nao foi possivel consultar o historico PHB: {erro}")
+        st.caption(
+            "O banco selecionado precisa conter as tabelas e views PHB. "
+            f"Para usar outro banco, configure {RELATORIOS_DB_ENV}."
+        )
+    else:
+        if not datas_hist:
+            st.info("Ainda nao ha leituras PHB neste banco.")
+        else:
+            st.caption(
+                f"Periodo disponivel: {datas_hist[0][:4]} a {datas_hist[-1][:4]}. "
+                "Os indicadores resumem todo o historico; o filtro controla os graficos."
+            )
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Primeira data", resumo_hist["primeira_data"])
+            c2.metric("Ultima data", resumo_hist["ultima_data"])
+            c3.metric("Registros", f"{resumo_hist['total_registros']:,}".replace(",", "."))
+            c4, c5, c6 = st.columns(3)
+            c4.metric("Dias com potencia", resumo_hist["dias_com_potencia"])
+            c5.metric("Dias com energia", resumo_hist["dias_com_energia"])
+            c6.metric("Dias com temperatura", resumo_hist["dias_com_temperatura"])
+
+            inicio_disp = date.fromisoformat(datas_hist[0])
+            fim_disp = date.fromisoformat(datas_hist[-1])
+            periodo = st.date_input(
+                "Periodo local dos graficos",
+                value=(inicio_disp, fim_disp),
+                min_value=inicio_disp,
+                max_value=fim_disp,
+                key="historico_phb_periodo",
+            )
+            if not isinstance(periodo, (tuple, list)) or len(periodo) != 2:
+                st.info("Selecione as datas inicial e final para exibir os graficos.")
+            else:
+                inicio, fim = (valor.isoformat() for valor in periodo)
+                try:
+                    df_hist = carregar_phb_pagina(caminho_relatorios, inicio, fim)
+                except (FileNotFoundError, sqlite3.Error) as erro:
+                    st.error(f"Falha ao carregar o periodo PHB: {erro}")
+                else:
+                    if df_hist.empty:
+                        st.info("Nao ha registros PHB no intervalo selecionado.")
+                    else:
+                        st.caption(f"{len(df_hist):,} leituras no intervalo.".replace(",", "."))
+                        graficos = [
+                            ("potencia_w", "Potencia (W)"),
+                            ("energia_intervalo_kwh", "Energia do intervalo (kWh)"),
+                            ("temperatura_c", "Temperatura (C)"),
+                            ("inversores_ativos", "Inversores ativos"),
+                        ]
+                        for pos in range(0, len(graficos), 2):
+                            colunas = st.columns(2)
+                            for coluna, (campo, rotulo) in zip(colunas, graficos[pos:pos + 2]):
+                                if df_hist[campo].notna().any():
+                                    figura = px.line(
+                                        df_hist, x="ts_local", y=campo, title=rotulo,
+                                        labels={"ts_local": "Data/hora local", campo: rotulo},
+                                    )
+                                    coluna.plotly_chart(figura, width="stretch")
+                                else:
+                                    coluna.info(f"Sem valores de {rotulo.lower()} neste intervalo.")
+
+
+# ------------------------------------------------------------------
+# 9. Historico KSTAR
+# ------------------------------------------------------------------
+
+elif pagina == "Histórico KSTAR":
+    st.title("Histórico KSTAR")
+    caminho_relatorios = os.environ.get(RELATORIOS_DB_ENV, banco.DB_PATH)
+
+    try:
+        datas_hist, resumo_hist = carregar_resumo_kstar_pagina(caminho_relatorios)
+    except (FileNotFoundError, sqlite3.Error) as erro:
+        st.error(f"Nao foi possivel consultar o historico KSTAR: {erro}")
+        st.caption(
+            "O banco selecionado precisa conter as tabelas e views KSTAR. "
+            f"Para usar outro banco, configure {RELATORIOS_DB_ENV}."
+        )
+    else:
+        if not datas_hist:
+            st.info("Ainda nao ha leituras KSTAR neste banco.")
+        else:
+            st.caption(
+                f"Periodo disponivel: {datas_hist[0][:4]} a {datas_hist[-1][:4]}. "
+                "Os indicadores resumem todo o historico; o filtro controla os graficos."
+            )
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Primeira data", resumo_hist["primeira_data"])
+            c2.metric("Ultima data", resumo_hist["ultima_data"])
+            c3.metric("Registros", f"{resumo_hist['total_registros']:,}".replace(",", "."))
+            c4, c5 = st.columns(2)
+            c4.metric("Horario corrigido", f"{resumo_hist['pct_hora_corrigida']}%")
+            c5.metric("Modo inferido", f"{resumo_hist['pct_modo_inferido']}%")
+
+            inicio_disp = date.fromisoformat(datas_hist[0])
+            fim_disp = date.fromisoformat(datas_hist[-1])
+            periodo = st.date_input(
+                "Periodo local dos graficos",
+                value=(inicio_disp, fim_disp),
+                min_value=inicio_disp,
+                max_value=fim_disp,
+                key="historico_kstar_periodo",
+            )
+            if not isinstance(periodo, (tuple, list)) or len(periodo) != 2:
+                st.info("Selecione as datas inicial e final para exibir os graficos.")
+            else:
+                inicio, fim = (valor.isoformat() for valor in periodo)
+                try:
+                    df_hist = carregar_kstar_pagina(caminho_relatorios, inicio, fim)
+                except (FileNotFoundError, sqlite3.Error) as erro:
+                    st.error(f"Falha ao carregar o periodo KSTAR: {erro}")
+                else:
+                    if df_hist.empty:
+                        st.info("Nao ha registros KSTAR no intervalo selecionado.")
+                    else:
+                        st.caption(f"{len(df_hist):,} leituras no intervalo.".replace(",", "."))
+                        figura = px.line(
+                            df_hist,
+                            x="ts_local",
+                            y=["potencia_w", "pv1_w", "pv2_w", "pv3_w"],
+                            title="Potencia total e canais PV",
+                            labels={
+                                "ts_local": "Data/hora local",
+                                "value": "Potencia (W)",
+                                "variable": "Serie",
+                            },
+                        )
+                        st.plotly_chart(figura, width="stretch")
