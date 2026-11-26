@@ -11,7 +11,7 @@ Rodar com:  streamlit run dashboard.py
 
 import os
 import sqlite3
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -20,6 +20,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import banco
+import catalogo_meteorologia as catalogo
 import consultas
 import performance_ratio as pr
 
@@ -112,22 +113,80 @@ def carregar_kstar_pagina(caminho, inicio, fim):
         conn.close()
 
 
-try:
-    dados = carregar_dados()
-except banco.BancoNaoEncontrado as erro:
-    st.error(str(erro))
-    st.stop()
+@st.cache_data(ttl=300)
+def carregar_resumo_meteorologia_dashboard():
+    with banco.conectar() as conn:
+        return consultas.resumo_meteorologia(conn), consultas.datas_meteorologia(conn)
 
-if not dados["datas"]:
-    st.warning("O banco existe mas está vazio (nenhum dia em leitura_15min). "
-               "Rode o pipeline (pipeline/integra_usina_meteorologia.py) e depois "
-               "pipeline/carrega_banco.py antes de usar o dashboard.")
-    st.stop()
 
+@st.cache_data(ttl=300)
+def carregar_meteorologia_agregada_dashboard(variavel, modo, inicio, fim):
+    with banco.conectar() as conn:
+        return consultas.meteorologia_agregada(conn, variavel, modo, inicio, fim)
+
+
+@st.cache_data(ttl=300)
+def carregar_resumo_variavel_meteorologica_dashboard(coluna):
+    with banco.conectar() as conn:
+        return consultas.resumo_variavel_meteorologica(conn, coluna)
+
+
+@st.cache_data(ttl=300)
+def carregar_resumo_lacunas_meteorologia_dashboard():
+    with banco.conectar() as conn:
+        return consultas.resumo_lacunas_meteorologia(conn)
+
+
+@st.cache_data(ttl=300)
+def carregar_lacunas_meteorologia_dashboard():
+    with banco.conectar() as conn:
+        return consultas.lacunas_meteorologia(conn)
+
+
+@st.cache_data(ttl=300)
+def carregar_resumo_ingestao_meteorologia_dashboard():
+    with banco.conectar() as conn:
+        return consultas.resumo_ingestao_meteorologia(conn)
+
+
+@st.cache_data(ttl=300)
+def carregar_ingestao_meteorologia_dashboard(limite=50):
+    with banco.conectar() as conn:
+        return consultas.ingestao_meteorologia_periodo(conn, limite=limite)
+
+
+def _formatar_data_ingestao(valor, incluir_hora=False):
+    if not valor:
+        return "?"
+    try:
+        data_hora = datetime.fromisoformat(str(valor).replace("Z", "+00:00"))
+        formato = "%d/%m/%Y %H:%M" if incluir_hora else "%d/%m/%Y"
+        return data_hora.strftime(formato)
+    except ValueError:
+        return str(valor)
+
+
+def _formatar_numero_meteorologico(valor):
+    if valor is None:
+        return "—"
+    return f"{valor:,.2f}".translate(str.maketrans({",": ".", ".": ","}))
+
+
+
+def _formatar_duracao_minutos(minutos):
+    dias, resto = divmod(int(minutos), 1440)
+    horas, minutos = divmod(resto, 60)
+    partes = []
+    if dias:
+        partes.append(f"{dias} d")
+    if horas:
+        partes.append(f"{horas} h")
+    if minutos or not partes:
+        partes.append(f"{minutos} min")
+    return " ".join(partes)
 
 # ------------------------------------------------------------------
-# Navegação
-# ------------------------------------------------------------------
+# Navegacao
 
 pagina = st.sidebar.radio(
     "Seção",
@@ -138,11 +197,27 @@ pagina = st.sidebar.radio(
         "Histórico 2020–2026",
         "Qualidade dos dados",
         "Meteorologia × Geração",
+        "Meteorologia",
         "Alertas e diagnóstico",
         "Histórico PHB",
         "Histórico KSTAR",
     ],
 )
+
+if pagina != "Meteorologia":
+    try:
+        dados = carregar_dados()
+    except banco.BancoNaoEncontrado as erro:
+        st.error(str(erro))
+        st.stop()
+
+    if not dados["datas"]:
+        st.warning("O banco existe mas está vazio (nenhum dia em leitura_15min). "
+                   "Rode o pipeline (pipeline/integra_usina_meteorologia.py) e depois "
+                   "pipeline/carrega_banco.py antes de usar o dashboard.")
+        st.stop()
+
+
 
 st.sidebar.markdown("---")
 st.sidebar.caption(
@@ -656,3 +731,180 @@ elif pagina == "Histórico KSTAR":
                             },
                         )
                         st.plotly_chart(figura, width="stretch")
+
+# ------------------------------------------------------------------
+# 10. Meteorologia independente
+# ------------------------------------------------------------------
+
+elif pagina == "Meteorologia":
+    st.title("Meteorologia")
+    try:
+        resumo_meteo, datas_meteo = carregar_resumo_meteorologia_dashboard()
+        resumo_lacunas = carregar_resumo_lacunas_meteorologia_dashboard()
+    except (banco.BancoNaoEncontrado, sqlite3.Error) as erro:
+        st.error(f"Não foi possível consultar meteorologia_15min: {erro}")
+    else:
+        indicadores = st.columns(5)
+        primeira_data = (
+            date.fromisoformat(resumo_meteo["primeira_data"]).strftime("%d/%m/%Y")
+            if resumo_meteo["primeira_data"] else "—"
+        )
+        ultima_data = (
+            date.fromisoformat(resumo_meteo["ultima_data"]).strftime("%d/%m/%Y")
+            if resumo_meteo["ultima_data"] else "—"
+        )
+        indicadores[0].metric("Primeiro registro", primeira_data)
+        indicadores[1].metric("Último registro", ultima_data)
+        indicadores[2].metric("Registros", f'{resumo_meteo["total_registros"]:,}'.replace(",", "."))
+        indicadores[3].metric("Dias", resumo_meteo["total_dias"])
+        indicadores[4].metric(
+            "Maior lacuna",
+            _formatar_duracao_minutos(resumo_lacunas["maior_lacuna_min"]),
+        )
+        indicadores_lacunas = st.columns(2)
+        indicadores_lacunas[0].metric(
+            "Quantidade de lacunas", resumo_lacunas["quantidade_lacunas"]
+        )
+        indicadores_lacunas[1].metric(
+            "Registros ausentes", resumo_lacunas["total_registros_ausentes"]
+        )
+
+        if not datas_meteo:
+            st.info("A tabela meteorologia_15min ainda nao tem registros.")
+        else:
+            st.subheader("10 maiores lacunas")
+            df_lacunas = carregar_lacunas_meteorologia_dashboard()
+            if df_lacunas.empty:
+                st.info("Nenhuma lacuna de 15 minutos foi encontrada.")
+            else:
+                df_lacunas_top = (
+                    df_lacunas.sort_values(
+                        ["minutos_ausentes", "registros_ausentes"], ascending=False
+                    )
+                    .head(10)
+                    .rename(columns={
+                        "inicio": "Início",
+                        "fim": "Fim",
+                        "minutos_ausentes": "Minutos ausentes",
+                        "registros_ausentes": "Registros ausentes",
+                    })
+                )
+                st.dataframe(df_lacunas_top, use_container_width=True, hide_index=True)
+
+            data_minima = date.fromisoformat(datas_meteo[0])
+            data_maxima = date.fromisoformat(datas_meteo[-1])
+            variaveis = catalogo.variaveis_da_tabela_meteorologia()
+            opcoes_variaveis = {
+                f"{variavel.descricao} ({variavel.unidade}) — {variavel.coluna}": variavel.coluna
+                for variavel in variaveis
+            }
+            filtros = st.columns([1, 1, 3])
+            data_inicio = filtros[0].date_input(
+                "Data inicial", value=data_minima, min_value=data_minima, max_value=data_maxima,
+                key="meteorologia_data_inicio",
+            )
+            data_fim = filtros[1].date_input(
+                "Data final", value=data_maxima, min_value=data_minima, max_value=data_maxima,
+                key="meteorologia_data_fim",
+            )
+            rotulo_variavel = filtros[2].selectbox(
+                "Variável meteorológica", list(opcoes_variaveis), key="meteorologia_variavel"
+            )
+            coluna = opcoes_variaveis[rotulo_variavel]
+            periodo_visualizacao = st.radio(
+                "Escala temporal",
+                ["Dia", "Mês", "Ano", "Todos"],
+                horizontal=True,
+                key="meteorologia_escala_temporal",
+            )
+            metadados_variavel = next(v for v in variaveis if v.coluna == coluna)
+            if coluna in catalogo.VARIAVEIS_ACUMULATIVAS:
+                nome_variavel = f"{metadados_variavel.grupo} acumulada"
+            else:
+                nome_variavel = metadados_variavel.descricao.split(" (", 1)[0]
+
+            st.subheader("Estatísticas da variável")
+            st.caption("Estatísticas calculadas sobre todos os registros meteorológicos; o período filtra o gráfico.")
+            try:
+                estatisticas = carregar_resumo_variavel_meteorologica_dashboard(coluna)
+            except sqlite3.Error as erro:
+                st.error(f"Falha ao calcular estatísticas em meteorologia_15min: {erro}")
+            else:
+                estatisticas_1 = st.columns(4)
+                estatisticas_1[0].metric("Mínimo", _formatar_numero_meteorologico(estatisticas["minimo"]))
+                estatisticas_1[1].metric("Máximo", _formatar_numero_meteorologico(estatisticas["maximo"]))
+                estatisticas_1[2].metric("Média", _formatar_numero_meteorologico(estatisticas["media"]))
+                estatisticas_1[3].metric("Mediana", _formatar_numero_meteorologico(estatisticas["mediana"]))
+                estatisticas_2 = st.columns(3)
+                estatisticas_2[0].metric("Válidos", f'{estatisticas["nao_nulos"]:,}'.replace(",", "."))
+                estatisticas_2[1].metric("Nulos", f'{estatisticas["nulos"]:,}'.replace(",", "."))
+                percentual = f'{estatisticas["percentual_valido"]:.1f}'.replace(".", ",")
+                estatisticas_2[2].metric("Percentual válido", f"{percentual}%")
+
+            if data_inicio > data_fim:
+                st.warning("A data inicial deve ser anterior ou igual à data final.")
+            else:
+                try:
+                    df_meteo = carregar_meteorologia_agregada_dashboard(
+                        coluna,
+                        periodo_visualizacao,
+                        data_inicio.isoformat(),
+                        data_fim.isoformat(),
+                    )
+                except sqlite3.Error as erro:
+                    st.error(f"Falha ao carregar meteorologia_15min: {erro}")
+                else:
+                    df_grafico = df_meteo[["timestamp_15min", coluna]].dropna(subset=[coluna])
+                    if df_grafico.empty:
+                        st.info("Não há valores válidos desta variável no intervalo selecionado.")
+                    else:
+                        figura = px.line(
+                            df_grafico,
+                            x="timestamp_15min",
+                            y=coluna,
+                            title=f"{nome_variavel} — {periodo_visualizacao}",
+                            labels={
+                                "timestamp_15min": "Data/hora",
+                                coluna: nome_variavel,
+                            },
+                        )
+                        st.caption(
+                            f"{len(df_grafico):,} pontos na escala {periodo_visualizacao}.".replace(",", ".")
+                        )
+                        st.plotly_chart(figura, width="stretch")
+
+        st.divider()
+        st.subheader("Diário de ingestão")
+        try:
+            resumo_ingestao = carregar_resumo_ingestao_meteorologia_dashboard()
+            eventos_ingestao = carregar_ingestao_meteorologia_dashboard(limite=50)
+        except sqlite3.Error as erro:
+            st.error(f"Falha ao consultar o diário de ingestão: {erro}")
+        else:
+            if resumo_ingestao["ultima_aquisicao"] is None:
+                st.info("Nenhum registro de ingestão encontrado.")
+            indicadores_ingestao = st.columns(4)
+            indicadores_ingestao[0].metric(
+                "Última aquisição",
+                _formatar_data_ingestao(resumo_ingestao["ultima_aquisicao"], incluir_hora=True),
+            )
+            indicadores_ingestao[1].metric("Arquivos OK", resumo_ingestao["arquivos_ok"])
+            indicadores_ingestao[2].metric("Arquivos com erro", resumo_ingestao["arquivos_erro"])
+            primeiro_registro = _formatar_data_ingestao(resumo_ingestao["primeiro_registro"])
+            ultimo_registro = _formatar_data_ingestao(resumo_ingestao["ultimo_registro"])
+            indicadores_ingestao[3].metric(
+                "Período coberto",
+                f"{primeiro_registro} → {ultimo_registro}"
+                if primeiro_registro != "—" or ultimo_registro != "—" else "—",
+            )
+            if not eventos_ingestao.empty:
+                eventos_visiveis = eventos_ingestao.rename(columns={
+                    "data_hora": "Data/Hora",
+                    "arquivo": "Arquivo",
+                    "status": "Status",
+                    "mensagem": "Mensagem",
+                }).copy()
+                eventos_visiveis["Data/Hora"] = eventos_visiveis["Data/Hora"].map(
+                    lambda valor: _formatar_data_ingestao(valor, incluir_hora=True)
+                )
+                st.dataframe(eventos_visiveis, use_container_width=True, hide_index=True)

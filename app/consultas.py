@@ -7,6 +7,9 @@ estiver vazia ou a data não existir, o retorno é um DataFrame vazio, e quem
 decide o que mostrar na tela é o dashboard.py.
 """
 
+import math
+import statistics
+
 import pandas as pd
 
 import catalogo_meteorologia as catalogo
@@ -173,6 +176,40 @@ def ultimas_ingestoes(conn, limite=20):
     )
 
 
+def resumo_ingestao_meteorologia(conn):
+    """Summarize all acquisition events recorded for meteorological files."""
+    ultima, arquivos_ok, arquivos_erro, primeiro, ultimo = conn.execute(
+        """SELECT MAX(processado_em),
+                  COALESCE(SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END), 0),
+                  COALESCE(SUM(CASE WHEN status = 'erro' THEN 1 ELSE 0 END), 0),
+                  MIN(primeiro_registro), MAX(ultimo_registro)
+           FROM ingestao_arquivos"""
+    ).fetchone()
+    return {
+        "ultima_aquisicao": ultima,
+        "arquivos_ok": int(arquivos_ok),
+        "arquivos_erro": int(arquivos_erro),
+        "primeiro_registro": primeiro,
+        "ultimo_registro": ultimo,
+    }
+
+
+def ingestao_meteorologia_periodo(conn, limite=100):
+    """Return the newest acquisition events, with the requested maximum count."""
+    limite = max(0, int(limite))
+    return pd.read_sql(
+        """SELECT processado_em AS data_hora,
+                  nome_arquivo AS arquivo,
+                  status,
+                  mensagem
+           FROM ingestao_arquivos
+           ORDER BY processado_em DESC, id DESC
+           LIMIT ?""",
+        conn,
+        params=[limite],
+    )
+
+
 def salvar_historico_anual(conn, df_inversores, df_usina):
     """Histórico anual é sempre regenerado por completo (replace), porque
     vem inteiro de novo a cada vez que o relatório 'estatístico ALL' é
@@ -229,6 +266,233 @@ def meteorologia_15min_do_dia(conn, data_iso):
         params=[data_iso],
         parse_dates=["timestamp_15min", "timestamp_original"],
     )
+
+
+def datas_meteorologia(conn):
+    """Return available meteorological dates as sorted YYYY-MM-DD strings."""
+    return [
+        row[0] for row in conn.execute(
+            """SELECT DISTINCT DATE(timestamp_15min)
+               FROM meteorologia_15min
+               WHERE timestamp_15min IS NOT NULL
+               ORDER BY DATE(timestamp_15min)"""
+        ).fetchall()
+    ]
+
+
+def meteorologia_periodo(conn, inicio, fim):
+    """Return all meteorological columns in the inclusive date interval."""
+    return pd.read_sql(
+        """SELECT *
+           FROM meteorologia_15min
+           WHERE DATE(timestamp_15min) BETWEEN ? AND ?
+           ORDER BY timestamp_15min""",
+        conn,
+        params=[inicio, fim],
+        parse_dates=["timestamp_15min", "timestamp_original"],
+    )
+
+
+def _media_circular_direcao(valores):
+    """Circular mean in degrees; return None when direction is undefined."""
+    angulos = [float(valor) % 360 for valor in valores if pd.notna(valor)]
+    if not angulos:
+        return None
+
+    seno = sum(math.sin(math.radians(angulo)) for angulo in angulos) / len(angulos)
+    cosseno = sum(math.cos(math.radians(angulo)) for angulo in angulos) / len(angulos)
+    if math.hypot(seno, cosseno) <= 1e-12:
+        return None
+
+    resultado = math.degrees(math.atan2(seno, cosseno)) % 360
+    if math.isclose(resultado, 360.0, rel_tol=0.0, abs_tol=1e-10):
+        return 0.0
+    if math.isclose(resultado, 0.0, rel_tol=0.0, abs_tol=1e-10):
+        return 0.0
+    return resultado
+
+
+def meteorologia_agregada(conn, variavel, modo, inicio, fim):
+    """Return one meteorological series at the requested time scale.
+
+    Dia keeps original 15-minute readings. Mes groups by local day, Ano by
+    local month, and Todos by local year. Direction columns use a circular mean,
+    cumulative columns use sums, and other values use arithmetic means.
+    """
+    if variavel not in catalogo.colunas_valores():
+        raise ValueError(f"Unknown meteorological value column: {variavel}")
+
+    modos = {"dia": "dia", "mes": "mes", "m\u00eas": "mes", "ano": "ano", "todos": "todos"}
+    modo_normalizado = modos.get(str(modo).strip().casefold())
+    if modo_normalizado is None:
+        raise ValueError("modo must be Dia, Mes, Ano, or Todos")
+
+    coluna_sql = f'"{variavel}"'
+    if modo_normalizado == "dia":
+        consulta = f"""SELECT timestamp_15min, {coluna_sql} AS "{variavel}"
+                        FROM meteorologia_15min
+                        WHERE DATE(timestamp_15min) BETWEEN ? AND ?
+                        ORDER BY timestamp_15min"""
+        return pd.read_sql(
+            consulta,
+            conn,
+            params=[inicio, fim],
+            parse_dates=["timestamp_15min"],
+        )
+
+    if variavel in catalogo.VARIAVEIS_CIRCULARES:
+        dados = pd.read_sql(
+            f"""SELECT timestamp_15min, {coluna_sql} AS "{variavel}"
+                FROM meteorologia_15min
+                WHERE DATE(timestamp_15min) BETWEEN ? AND ?
+                ORDER BY timestamp_15min""",
+            conn,
+            params=[inicio, fim],
+            parse_dates=["timestamp_15min"],
+        )
+        if modo_normalizado == "mes":
+            dados["timestamp_15min"] = dados["timestamp_15min"].dt.normalize()
+        elif modo_normalizado == "ano":
+            dados["timestamp_15min"] = (
+                dados["timestamp_15min"].dt.to_period("M").dt.to_timestamp()
+            )
+        else:
+            dados["timestamp_15min"] = (
+                dados["timestamp_15min"].dt.to_period("Y").dt.to_timestamp()
+            )
+        return (
+            dados.groupby("timestamp_15min", as_index=False, sort=True)[variavel]
+            .agg(_media_circular_direcao)
+        )
+
+    if modo_normalizado == "mes":
+        periodo = "DATE(timestamp_15min)"
+    elif modo_normalizado == "ano":
+        periodo = "strftime('%Y-%m-01', timestamp_15min)"
+    else:
+        periodo = "strftime('%Y-01-01', timestamp_15min)"
+    agregacao_sql = "SUM" if variavel in catalogo.VARIAVEIS_ACUMULATIVAS else "AVG"
+    consulta = f"""SELECT {periodo} AS timestamp_15min,
+                          {agregacao_sql}({coluna_sql}) AS "{variavel}"
+                   FROM meteorologia_15min
+                   WHERE DATE(timestamp_15min) BETWEEN ? AND ?
+                   GROUP BY {periodo}
+                   ORDER BY timestamp_15min"""
+    return pd.read_sql(
+        consulta,
+        conn,
+        params=[inicio, fim],
+        parse_dates=["timestamp_15min"],
+    )
+
+
+def resumo_variavel_meteorologica(conn, coluna):
+    """Return descriptive statistics for one meteorological value column.
+
+    Only measurement columns from the catalog are accepted, preventing arbitrary
+    SQL identifiers from entering the query.
+    """
+    if coluna not in catalogo.colunas_valores():
+        raise ValueError(f"Unknown meteorological value column: {coluna}")
+
+    total, validos, minimo, maximo, media = conn.execute(
+        f"""SELECT COUNT(*), COUNT("{coluna}"), MIN("{coluna}"),
+                  MAX("{coluna}"), AVG("{coluna}")
+           FROM meteorologia_15min"""
+    ).fetchone()
+    valores = [
+        row[0] for row in conn.execute(
+            f"SELECT [{coluna}] FROM meteorologia_15min "
+            f"WHERE [{coluna}] IS NOT NULL ORDER BY [{coluna}]"
+        ).fetchall()
+    ]
+    return {
+        "minimo": minimo,
+        "maximo": maximo,
+        "media": media,
+        "mediana": statistics.median(valores) if valores else None,
+        "nao_nulos": int(validos),
+        "nulos": int(total - validos),
+        "percentual_valido": round(100 * validos / total, 1) if total else 0.0,
+    }
+
+
+_CTE_LACUNAS_METEOROLOGIA = """WITH sequencia AS (
+    SELECT
+        LAG(timestamp_15min) OVER (ORDER BY timestamp_15min) AS inicio,
+        timestamp_15min AS fim
+    FROM meteorologia_15min
+    WHERE timestamp_15min IS NOT NULL
+), diferencas AS (
+    SELECT
+        inicio,
+        fim,
+        CAST(strftime('%s', fim) AS INTEGER)
+            - CAST(strftime('%s', inicio) AS INTEGER) AS intervalo_segundos
+    FROM sequencia
+    WHERE inicio IS NOT NULL
+), lacunas AS (
+    SELECT
+        inicio,
+        fim,
+        CAST(intervalo_segundos / 60 AS INTEGER) - 15 AS minutos_ausentes,
+        CAST(intervalo_segundos / 900 AS INTEGER) - 1 AS registros_ausentes
+    FROM diferencas
+    WHERE intervalo_segundos > 900
+)
+"""
+
+
+def lacunas_meteorologia(conn):
+    """Return timestamp jumps and the missing 15-minute intervals they contain.
+
+    inicio and fim are the observed timestamps bounding each gap; no missing
+    values are generated or estimated.
+    """
+    return pd.read_sql(
+        _CTE_LACUNAS_METEOROLOGIA + """SELECT inicio, fim, minutos_ausentes,
+                                                registros_ausentes
+                                         FROM lacunas
+                                         ORDER BY inicio""",
+        conn,
+        parse_dates=["inicio", "fim"],
+    )
+
+
+def resumo_lacunas_meteorologia(conn):
+    """Return gap count, largest missing duration, and missing row total."""
+    quantidade, maior, total = conn.execute(
+        _CTE_LACUNAS_METEOROLOGIA + """SELECT COUNT(*),
+                                                  COALESCE(MAX(minutos_ausentes), 0),
+                                                  COALESCE(SUM(registros_ausentes), 0)
+                                           FROM lacunas"""
+    ).fetchone()
+    return {
+        "quantidade_lacunas": int(quantidade),
+        "maior_lacuna_min": int(maior),
+        "total_registros_ausentes": int(total),
+    }
+
+
+def resumo_meteorologia(conn):
+    """Summarize date coverage and largest missing duration in minutes.
+
+    A gap is the time between two consecutive records minus one expected
+    15-minute interval. A regular series therefore has a zero-minute gap.
+    """
+    inicio, fim, total, dias = conn.execute(
+        """SELECT MIN(DATE(timestamp_15min)), MAX(DATE(timestamp_15min)),
+                  COUNT(*), COUNT(DISTINCT DATE(timestamp_15min))
+           FROM meteorologia_15min"""
+    ).fetchone()
+    maior_lacuna = resumo_lacunas_meteorologia(conn)["maior_lacuna_min"]
+    return {
+        "primeira_data": inicio,
+        "ultima_data": fim,
+        "total_registros": int(total),
+        "total_dias": int(dias),
+        "maior_lacuna_minutos": int(maior_lacuna),
+    }
 
 
 def leitura_completa_do_dia(conn, data_iso):
