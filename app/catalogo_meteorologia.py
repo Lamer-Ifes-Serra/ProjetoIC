@@ -113,6 +113,17 @@ VARIAVEIS += _quatro("temp_solo_{est}", "", "Temp solo {est}", None, "Temperatur
 # Colunas de apoio da tabela meteorologia_15min (não são medições)
 COLUNAS_APOIO = ["timestamp_15min", "timestamp_original", "lacuna_temporal"]
 
+# Circular angular variables: use circular rather than arithmetic means.
+VARIAVEIS_CIRCULARES = frozenset({
+    "vento_dir_med_graus",
+    "vento_dir_max_graus",
+    "vento_dir_min_graus",
+})
+
+VARIAVEIS_ACUMULATIVAS = frozenset({
+    "precipitacao",
+})
+
 # Colunas das 5 variáveis antigas que ainda existem em leitura_15min (legado).
 COLUNAS_LEGADAS_EM_LEITURA = [
     "ghi_lppyra02_w_m2", "ghi_lpnet14_w_m2", "temperatura_c", "vento_m_s", "precipitacao",
