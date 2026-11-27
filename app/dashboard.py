@@ -11,7 +11,8 @@ Rodar com:  streamlit run dashboard.py
 
 import os
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, time, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import pandas as pd
@@ -155,6 +156,22 @@ def carregar_ingestao_meteorologia_dashboard(limite=50):
         return consultas.ingestao_meteorologia_periodo(conn, limite=limite)
 
 
+@st.cache_data(ttl=300)
+def carregar_dados_alarmes_dashboard():
+    with banco.conectar() as conn:
+        return (
+            consultas.resumo_alarmes(conn),
+            consultas.alarmes_por_origem(conn),
+            consultas.alarmes_por_severidade(conn),
+        )
+
+
+@st.cache_data(ttl=300)
+def carregar_alarmes_periodo_dashboard(inicio, fim):
+    with banco.conectar() as conn:
+        return consultas.alarmes_periodo(conn, inicio, fim)
+
+
 def _formatar_data_ingestao(valor, incluir_hora=False):
     if not valor:
         return "?"
@@ -164,6 +181,34 @@ def _formatar_data_ingestao(valor, incluir_hora=False):
         return data_hora.strftime(formato)
     except ValueError:
         return str(valor)
+
+
+
+FUSO_LOCAL_ALARMES = ZoneInfo("America/Sao_Paulo")
+
+
+def _timestamp_alarme_local(valor):
+    if not valor:
+        return "—"
+    timestamp = datetime.fromisoformat(str(valor))
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(FUSO_LOCAL_ALARMES).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _data_local_para_utc(data, fim_do_dia=False):
+    horario = time(23, 59, 59) if fim_do_dia else time.min
+    instante_local = datetime.combine(data, horario, tzinfo=FUSO_LOCAL_ALARMES)
+    return instante_local.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _data_evento_local(valor):
+    if not valor:
+        return None
+    timestamp = datetime.fromisoformat(str(valor))
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(FUSO_LOCAL_ALARMES).date()
 
 
 def _formatar_numero_meteorologico(valor):
@@ -201,10 +246,11 @@ pagina = st.sidebar.radio(
         "Alertas e diagnóstico",
         "Histórico PHB",
         "Histórico KSTAR",
+        "Histórico de Alarmes",
     ],
 )
 
-if pagina != "Meteorologia":
+if pagina not in ("Meteorologia", "Histórico de Alarmes"):
     try:
         dados = carregar_dados()
     except banco.BancoNaoEncontrado as erro:
@@ -908,3 +954,124 @@ elif pagina == "Meteorologia":
                     lambda valor: _formatar_data_ingestao(valor, incluir_hora=True)
                 )
                 st.dataframe(eventos_visiveis, use_container_width=True, hide_index=True)
+
+# ------------------------------------------------------------------
+# 11. Histórico de Alarmes
+# ------------------------------------------------------------------
+
+elif pagina == "Histórico de Alarmes":
+    st.title("Histórico de Alarmes")
+    try:
+        resumo_alarm, por_origem, por_severidade = carregar_dados_alarmes_dashboard()
+    except (banco.BancoNaoEncontrado, sqlite3.Error) as erro:
+        st.error(f"Não foi possível consultar historico_alarmes: {erro}")
+    else:
+        metricas_alarme = st.columns(5)
+        metricas_alarme[0].metric("Total de alarmes", resumo_alarm["total"])
+        metricas_alarme[1].metric("Informação", resumo_alarm["informacao"])
+        metricas_alarme[2].metric("Aviso", resumo_alarm["aviso"])
+        metricas_alarme[3].metric("Erro", resumo_alarm["erro"])
+        metricas_alarme[4].metric("Crítico", resumo_alarm["critico"])
+        datas_evento = st.columns(2)
+        datas_evento[0].metric(
+            "Primeiro evento (UTC−3)",
+            _timestamp_alarme_local(resumo_alarm["primeiro_evento"]),
+        )
+        datas_evento[1].metric(
+            "Último evento (UTC−3)",
+            _timestamp_alarme_local(resumo_alarm["ultimo_evento"]),
+        )
+
+        distribuicoes = st.columns(2)
+        origem_labels = {
+            "aquisicao": "Aquisição",
+            "meteorologia": "Meteorologia",
+            "phb": "PHB",
+            "kstar": "KSTAR",
+            "qualidade": "Qualidade",
+        }
+        severidade_labels = {
+            "informacao": "Informação",
+            "aviso": "Aviso",
+            "erro": "Erro",
+            "critico": "Crítico",
+        }
+        tabela_origens = por_origem.copy()
+        tabela_origens["origem"] = tabela_origens["origem"].map(origem_labels)
+        tabela_origens = tabela_origens.rename(columns={
+            "origem": "Origem", "quantidade": "Quantidade"
+        }).sort_values(["Quantidade", "Origem"], ascending=[False, True])
+        tabela_severidades = por_severidade.copy()
+        tabela_severidades["severidade"] = tabela_severidades["severidade"].map(severidade_labels)
+        tabela_severidades = tabela_severidades.rename(columns={
+            "severidade": "Severidade", "quantidade": "Quantidade"
+        })
+        with distribuicoes[0]:
+            st.subheader("Distribuição por origem")
+            st.dataframe(tabela_origens, use_container_width=True, hide_index=True)
+        with distribuicoes[1]:
+            st.subheader("Distribuição por severidade")
+            st.dataframe(tabela_severidades, use_container_width=True, hide_index=True)
+
+        if resumo_alarm["total"] == 0:
+            st.info("Nenhum alarme registrado.")
+        else:
+            primeira_data = _data_evento_local(resumo_alarm["primeiro_evento"])
+            ultima_data = _data_evento_local(resumo_alarm["ultimo_evento"])
+            filtros = st.columns(4)
+            data_inicio = filtros[0].date_input(
+                "Data inicial", value=primeira_data, min_value=primeira_data,
+                max_value=ultima_data, key="alarmes_data_inicio",
+            )
+            data_fim = filtros[1].date_input(
+                "Data final", value=ultima_data, min_value=primeira_data,
+                max_value=ultima_data, key="alarmes_data_fim",
+            )
+            origem_opcao = filtros[2].selectbox(
+                "Origem", ["Todas"] + list(origem_labels.values()),
+                key="alarmes_origem",
+            )
+            severidade_opcao = filtros[3].selectbox(
+                "Severidade", ["Todas"] + list(severidade_labels.values()),
+                key="alarmes_severidade",
+            )
+            if data_inicio > data_fim:
+                st.warning("A data inicial deve ser anterior ou igual à data final.")
+            else:
+                inicio_utc = _data_local_para_utc(data_inicio)
+                fim_utc = _data_local_para_utc(data_fim, fim_do_dia=True)
+                try:
+                    eventos = carregar_alarmes_periodo_dashboard(inicio_utc, fim_utc)
+                except sqlite3.Error as erro:
+                    st.error(f"Falha ao carregar eventos do período: {erro}")
+                else:
+                    origem_por_rotulo = {rotulo: codigo for codigo, rotulo in origem_labels.items()}
+                    severidade_por_rotulo = {
+                        rotulo: codigo for codigo, rotulo in severidade_labels.items()
+                    }
+                    if origem_opcao != "Todas":
+                        eventos = eventos[eventos["origem"] == origem_por_rotulo[origem_opcao]]
+                    if severidade_opcao != "Todas":
+                        eventos = eventos[
+                            eventos["severidade"] == severidade_por_rotulo[severidade_opcao]
+                        ]
+                    eventos = eventos.sort_values(
+                        "timestamp_evento", ascending=False, kind="stable"
+                    ).copy()
+                    if eventos.empty:
+                        st.info("Nenhum alarme encontrado para os filtros selecionados.")
+                    else:
+                        eventos["timestamp_evento"] = eventos["timestamp_evento"].map(
+                            _timestamp_alarme_local
+                        )
+                        eventos = eventos.rename(columns={
+                            "timestamp_evento": "timestamp_evento (UTC−3)"
+                        })
+                        st.dataframe(
+                            eventos[[
+                                "timestamp_evento (UTC−3)", "origem", "codigo",
+                                "severidade", "titulo", "referencia",
+                            ]],
+                            use_container_width=True,
+                            hide_index=True,
+                        )
