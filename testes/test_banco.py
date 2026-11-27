@@ -134,9 +134,174 @@ class TestMigracoes(BancoTemporario):
             )
         self.assertEqual(consultas.inicializar_schema(self.conn), [])
 
+    def test_migracao_008_cria_historico_alarmes(self):
+        aplicadas = consultas.inicializar_schema(self.conn)
+        self.assertIn(8, aplicadas)
+        self.assertEqual(migracoes.versao_atual(self.conn), 9)
+
+        tabela = self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'historico_alarmes'"
+        ).fetchone()
+        self.assertIsNotNone(tabela)
+        indices = {row[1] for row in self.conn.execute(
+            "PRAGMA index_list(historico_alarmes)"
+        )}
+        self.assertTrue({
+            "idx_historico_alarmes_evento",
+            "idx_historico_alarmes_origem",
+            "idx_historico_alarmes_codigo",
+        }.issubset(indices))
+
+        origens_validas = ("aquisicao", "meteorologia", "phb", "kstar", "qualidade")
+        severidades_validas = ("informacao", "aviso", "erro", "critico")
+        for origem in origens_validas:
+            with self.subTest(origem=origem):
+                self.conn.execute(
+                    """INSERT INTO historico_alarmes
+                       (timestamp_evento, origem, codigo, severidade, titulo, criado_em)
+                       VALUES ('2026-11-27 12:00:00', ?, 'evento_teste', 'informacao',
+                               'Evento de teste', '2026-11-27 12:00:00')""",
+                    (origem,),
+                )
+        for severidade in severidades_validas:
+            with self.subTest(severidade=severidade):
+                self.conn.execute(
+                    """INSERT INTO historico_alarmes
+                       (timestamp_evento, origem, codigo, severidade, titulo, criado_em)
+                       VALUES ('2026-11-27 12:00:00', 'qualidade', 'evento_teste', ?,
+                               'Evento de teste', '2026-11-27 12:00:00')""",
+                    (severidade,),
+                )
+        for origem, severidade in (("modbus", "informacao"), ("qualidade", "urgente")):
+            with self.subTest(origem=origem, severidade=severidade):
+                with self.assertRaises(sqlite3.IntegrityError):
+                    self.conn.execute(
+                        """INSERT INTO historico_alarmes
+                           (timestamp_evento, origem, codigo, severidade, titulo, criado_em)
+                           VALUES ('2026-11-27 12:00:00', ?, 'evento_teste', ?,
+                                   'Evento de teste', '2026-11-27 12:00:00')""",
+                        (origem, severidade),
+                    )
+
+        self.assertEqual(consultas.inicializar_schema(self.conn), [])
+        self.assertEqual(migracoes.versao_atual(self.conn), 9)
+
+    def test_migracao_009_cria_indice_unico_de_deduplicacao(self):
+        consultas.inicializar_schema(self.conn)
+        indices = {row[1] for row in self.conn.execute("PRAGMA index_list(historico_alarmes)")}
+        self.assertIn("ux_historico_alarmes_deduplicacao", indices)
+        dados = ("2026-11-27 10:00:00", "meteorologia", "lacuna_dados", "aviso", "Lacuna", "ref-1", "2026-11-27 10:00:00")
+        sql = """INSERT INTO historico_alarmes
+                 (timestamp_evento, origem, codigo, severidade, titulo, referencia, criado_em)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)"""
+        self.conn.execute(sql, dados)
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.conn.execute(sql, dados)
+        self.assertEqual(consultas.inicializar_schema(self.conn), [])
+
     def test_numeracao_das_migracoes_e_continua(self):
         numeros = [n for n, _ in migracoes.listar_migracoes()]
         self.assertEqual(numeros, list(range(1, len(numeros) + 1)))
+
+
+class TestHistoricoAlarmes(BancoTemporario):
+    def setUp(self):
+        super().setUp()
+        consultas.inicializar_schema(self.conn)
+
+    def inserir_alarme(self, timestamp, origem, severidade, codigo="teste"):
+        self.conn.execute(
+            """INSERT INTO historico_alarmes
+               (timestamp_evento, origem, codigo, severidade, titulo, descricao, criado_em)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (timestamp, origem, codigo, severidade, "Alarme de teste", None, timestamp),
+        )
+        self.conn.commit()
+
+    def test_resumo_vazio(self):
+        self.assertEqual(
+            consultas.resumo_alarmes(self.conn),
+            {
+                "total": 0,
+                "primeiro_evento": None,
+                "ultimo_evento": None,
+                "informacao": 0,
+                "aviso": 0,
+                "erro": 0,
+                "critico": 0,
+            },
+        )
+
+    def test_resumo_preenchido_conta_severidades_e_periodo(self):
+        self.inserir_alarme("2026-01-01 00:00:00", "kstar", "informacao")
+        self.inserir_alarme("2026-02-01 00:00:00", "phb", "aviso")
+        self.inserir_alarme("2026-03-01 00:00:00", "aquisicao", "erro")
+        self.inserir_alarme("2026-04-01 00:00:00", "qualidade", "critico")
+        self.inserir_alarme("2026-04-02 00:00:00", "meteorologia", "aviso")
+        self.assertEqual(
+            consultas.resumo_alarmes(self.conn),
+            {
+                "total": 5,
+                "primeiro_evento": "2026-01-01 00:00:00",
+                "ultimo_evento": "2026-04-02 00:00:00",
+                "informacao": 1,
+                "aviso": 2,
+                "erro": 1,
+                "critico": 1,
+            },
+        )
+
+    def test_ultimos_alarmes_ordenados_desc_e_limite_aplicado(self):
+        self.inserir_alarme("2026-01-01 00:00:00", "phb", "aviso", "antigo")
+        self.inserir_alarme("2026-01-03 00:00:00", "kstar", "informacao", "novo")
+        self.inserir_alarme("2026-01-02 00:00:00", "aquisicao", "erro", "meio")
+        df = consultas.ultimos_alarmes(self.conn, limite=2)
+        self.assertEqual(df.columns.tolist(), consultas.COLUNAS_ALARMES)
+        self.assertEqual(df["codigo"].tolist(), ["novo", "meio"])
+        self.assertEqual(len(consultas.ultimos_alarmes(self.conn, limite=0)), 0)
+
+    def test_alarmes_periodo_inclusivo(self):
+        self.inserir_alarme("2026-01-01 00:00:00", "phb", "aviso", "antes")
+        self.inserir_alarme("2026-01-02 00:00:00", "phb", "aviso", "inicio")
+        self.inserir_alarme("2026-01-03 00:00:00", "phb", "aviso", "fim")
+        self.inserir_alarme("2026-01-04 00:00:00", "phb", "aviso", "depois")
+        df = consultas.alarmes_periodo(
+            self.conn, "2026-01-02 00:00:00", "2026-01-03 00:00:00"
+        )
+        self.assertEqual(df["codigo"].tolist(), ["inicio", "fim"])
+
+    def test_alarmes_periodo_com_datas_inclui_dia_final_completo(self):
+        self.inserir_alarme("2026-01-01 23:59:00", "phb", "aviso", "inicio")
+        self.inserir_alarme("2026-01-02 12:30:00", "phb", "aviso", "durante")
+        self.inserir_alarme("2026-01-03 23:59:00", "phb", "aviso", "fim")
+        df = consultas.alarmes_periodo(self.conn, "2026-01-02", "2026-01-03")
+        self.assertEqual(df["codigo"].tolist(), ["durante", "fim"])
+
+    def test_agrupamento_por_origem_inclui_contagens_zero(self):
+        self.inserir_alarme("2026-01-01 00:00:00", "phb", "aviso")
+        self.inserir_alarme("2026-01-02 00:00:00", "phb", "erro")
+        self.inserir_alarme("2026-01-03 00:00:00", "kstar", "informacao")
+        df = consultas.alarmes_por_origem(self.conn)
+        self.assertEqual(df["origem"].tolist(), list(consultas.ORIGENS_ALARMES))
+        self.assertEqual(df["quantidade"].tolist(), [0, 0, 2, 1, 0])
+
+    def test_agrupamento_por_severidade_inclui_contagens_zero(self):
+        self.inserir_alarme("2026-01-01 00:00:00", "phb", "aviso")
+        self.inserir_alarme("2026-01-02 00:00:00", "kstar", "informacao")
+        self.inserir_alarme("2026-01-03 00:00:00", "aquisicao", "aviso")
+        df = consultas.alarmes_por_severidade(self.conn)
+        self.assertEqual(df["severidade"].tolist(), list(consultas.SEVERIDADES_ALARMES))
+        self.assertEqual(df["quantidade"].tolist(), [1, 2, 0, 0])
+
+    def test_todas_as_consultas_funcionam_sem_registros(self):
+        self.assertTrue(consultas.ultimos_alarmes(self.conn).empty)
+        self.assertTrue(
+            consultas.alarmes_periodo(
+                self.conn, "2026-01-01 00:00:00", "2026-12-31 23:59:59"
+            ).empty
+        )
+        self.assertEqual(consultas.alarmes_por_origem(self.conn)["quantidade"].sum(), 0)
+        self.assertEqual(consultas.alarmes_por_severidade(self.conn)["quantidade"].sum(), 0)
 
 
 class TestCatalogo(BancoTemporario):

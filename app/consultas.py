@@ -210,6 +210,92 @@ def ingestao_meteorologia_periodo(conn, limite=100):
     )
 
 
+
+ORIGENS_ALARMES = ("aquisicao", "meteorologia", "phb", "kstar", "qualidade")
+SEVERIDADES_ALARMES = ("informacao", "aviso", "erro", "critico")
+COLUNAS_ALARMES = [
+    "timestamp_evento", "origem", "codigo", "severidade", "titulo", "descricao", "referencia"
+]
+
+
+def resumo_alarmes(conn):
+    """Return total alarm count, time coverage, and counts by severity."""
+    linha = conn.execute(
+        """SELECT COUNT(*), MIN(timestamp_evento), MAX(timestamp_evento),
+                  COALESCE(SUM(CASE WHEN severidade = 'informacao' THEN 1 ELSE 0 END), 0),
+                  COALESCE(SUM(CASE WHEN severidade = 'aviso' THEN 1 ELSE 0 END), 0),
+                  COALESCE(SUM(CASE WHEN severidade = 'erro' THEN 1 ELSE 0 END), 0),
+                  COALESCE(SUM(CASE WHEN severidade = 'critico' THEN 1 ELSE 0 END), 0)
+           FROM historico_alarmes"""
+    ).fetchone()
+    total, primeiro, ultimo, informacao, aviso, erro, critico = linha
+    return {
+        "total": int(total),
+        "primeiro_evento": primeiro,
+        "ultimo_evento": ultimo,
+        "informacao": int(informacao),
+        "aviso": int(aviso),
+        "erro": int(erro),
+        "critico": int(critico),
+    }
+
+
+def ultimos_alarmes(conn, limite=50):
+    """Return recent alarm events, newest first, with a stable tie-breaker."""
+    limite = max(0, int(limite))
+    return pd.read_sql(
+        """SELECT timestamp_evento, origem, codigo, severidade, titulo, descricao, referencia
+           FROM historico_alarmes
+           ORDER BY timestamp_evento DESC, id DESC
+           LIMIT ?""",
+        conn,
+        params=[limite],
+    )
+
+
+def alarmes_periodo(conn, inicio, fim):
+    """Return alarms in an inclusive UTC interval, oldest first.
+
+    Date-only bounds (YYYY-MM-DD) include the whole first/last calendar day;
+    full timestamps are compared exactly.
+    """
+    inicio = str(inicio)
+    fim = str(fim)
+    if len(inicio) == 10:
+        inicio += " 00:00:00"
+    if len(fim) == 10:
+        fim += " 23:59:59"
+    return pd.read_sql(
+        """SELECT timestamp_evento, origem, codigo, severidade, titulo, descricao, referencia
+           FROM historico_alarmes
+           WHERE timestamp_evento >= ? AND timestamp_evento <= ?
+           ORDER BY timestamp_evento, id""",
+        conn,
+        params=[inicio, fim],
+    )
+
+
+def alarmes_por_origem(conn):
+    """Return a stable count row for each allowed alarm origin, including zeros."""
+    contagens = dict(conn.execute(
+        "SELECT origem, COUNT(*) FROM historico_alarmes GROUP BY origem"
+    ).fetchall())
+    return pd.DataFrame(
+        [(origem, int(contagens.get(origem, 0))) for origem in ORIGENS_ALARMES],
+        columns=["origem", "quantidade"],
+    )
+
+
+def alarmes_por_severidade(conn):
+    """Return a stable count row for each allowed severity, including zeros."""
+    contagens = dict(conn.execute(
+        "SELECT severidade, COUNT(*) FROM historico_alarmes GROUP BY severidade"
+    ).fetchall())
+    return pd.DataFrame(
+        [(severidade, int(contagens.get(severidade, 0))) for severidade in SEVERIDADES_ALARMES],
+        columns=["severidade", "quantidade"],
+    )
+
 def salvar_historico_anual(conn, df_inversores, df_usina):
     """Histórico anual é sempre regenerado por completo (replace), porque
     vem inteiro de novo a cada vez que o relatório 'estatístico ALL' é
